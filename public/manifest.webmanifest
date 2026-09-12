@@ -1,0 +1,13 @@
+{
+  "name": "SkyRadar",
+  "short_name": "SkyRadar",
+  "description": "See what's flying around you.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05080a",
+  "theme_color": "#05080a",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
