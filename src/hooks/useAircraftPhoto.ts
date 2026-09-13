@@ -2,33 +2,59 @@
 
 import { useEffect, useState } from "react";
 
-interface PhotoResult {
+export interface PhotoResult {
   imageUrl: string | null;
   attribution: string | null;
   loading: boolean;
 }
 
-/** Fetches an aircraft photo only when needed (spec #22/#24) — call with `enabled=false` until the card expands. */
-export function useAircraftPhoto(registration: string | undefined, enabled: boolean): PhotoResult {
-  const [state, setState] = useState<PhotoResult>({ imageUrl: null, attribution: null, loading: false });
+const EMPTY: PhotoResult = { imageUrl: null, attribution: null, loading: false };
+
+/**
+ * Fetches the photo of one specific airframe.
+ *
+ * Both identifiers are passed through: the ICAO 24-bit address is broadcast
+ * by every aircraft, so it finds a photo even when the feed couldn't resolve
+ * a registration.
+ *
+ * The result is cleared the instant the identity changes — showing the
+ * previous aircraft's photo on the new one's card would be showing something
+ * that isn't real.
+ */
+export function useAircraftPhoto(icao24: string | undefined, registration: string | undefined): PhotoResult {
+  const [state, setState] = useState<PhotoResult>(EMPTY);
 
   useEffect(() => {
-    if (!enabled || !registration) return;
+    if (!icao24 && !registration) {
+      setState(EMPTY);
+      return;
+    }
+
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true }));
-    fetch(`/api/aircraft/photo?registration=${encodeURIComponent(registration)}`)
+    setState({ ...EMPTY, loading: true });
+
+    const params = new URLSearchParams();
+    if (icao24) params.set("hex", icao24);
+    if (registration) params.set("registration", registration);
+
+    fetch(`/api/aircraft/photo?${params.toString()}`)
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
-        setState({ imageUrl: data.imageUrl ?? null, attribution: data.attribution ?? null, loading: false });
+        setState({
+          imageUrl: data.imageUrl ?? null,
+          attribution: data.attribution ?? null,
+          loading: false,
+        });
       })
       .catch(() => {
-        if (!cancelled) setState({ imageUrl: null, attribution: null, loading: false });
+        if (!cancelled) setState(EMPTY);
       });
+
     return () => {
       cancelled = true;
     };
-  }, [registration, enabled]);
+  }, [icao24, registration]);
 
   return state;
 }

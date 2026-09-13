@@ -1,3 +1,4 @@
+import { airlineFromCallsign } from "../airlines";
 import { classifyAircraft } from "../classify";
 import {
   Aircraft,
@@ -155,12 +156,17 @@ function parseState(row: unknown): Aircraft | null {
   const velocityMps = num(row[IDX.VELOCITY]);
   const verticalRateMps = num(row[IDX.VERTICAL_RATE]);
 
-  const classification = classifyAircraft({ callsign });
+  // OpenSky's free tier reports no operator at all, but a commercial
+  // callsign carries its operator's registered ICAO designator in its first
+  // three letters — a published fact, not an inference.
+  const airline = airlineFromCallsign(callsign)?.name;
+  const classification = classifyAircraft({ callsign, airline });
   const lastContact = num(row[IDX.LAST_CONTACT]);
 
   return {
     id: icao24,
     callsign,
+    airline,
     category: classification.category,
     silhouette: classification.silhouette,
     isMilitary: classification.isMilitary,

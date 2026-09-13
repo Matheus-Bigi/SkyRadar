@@ -85,9 +85,9 @@ blocked.
 `/api/aircraft?lat=&lon=&rangeMiles=` (a Next.js route handler), which asks
 the configured `AircraftDataProvider` for aircraft within that radius,
 normalizes the result into the app's internal `Aircraft` model, and returns
-only aircraft currently airborne. Aircraft photos are looked up on demand
-(only when a card is expanded) via `/api/aircraft/photo`, using the public
-Planespotters.net API by registration.
+only aircraft currently airborne. Two further details — the photo and the
+route — are looked up per aircraft when a card opens (see [Identifying one
+aircraft](#identifying-one-aircraft)).
 
 ## Aircraft data
 
@@ -147,6 +147,43 @@ it's active, and this should never be set in a real deployment.
 If a real provider's request fails (rate-limited, network error, etc.),
 `/api/aircraft` returns an error and the app shows a "LIVE DATA UNAVAILABLE"
 status — it never silently substitutes fake aircraft.
+
+## Identifying one aircraft
+
+Tapping an aircraft asks two more questions of the outside world. Both fire
+when the card opens rather than when it's expanded, so the answers are
+already there by the time anyone taps MORE, and both are keyed to that
+aircraft's own identity and cleared the moment the selection changes —
+leaving one aircraft's photo or route on another's card would be showing
+something that isn't real.
+
+**The photo** (`/api/aircraft/photo`, Planespotters.net) is a photo of that
+exact airframe, never a stock image of the type. It's asked for by ICAO
+24-bit address first and registration second, and that order is the whole
+fix for photos rarely appearing: the hex is broadcast by the aircraft
+itself, while the registration depends on a database lookup the feed may
+never have made. Asking by registration alone meant every aircraft the feed
+couldn't name got no photo at all.
+
+**The route** (`/api/aircraft/flightroute`) has to be looked up, because
+ADS-B doesn't carry one — an aircraft broadcasts its identity, position and
+movement, and nothing about its schedule. Two free, keyless databases are
+tried: adsb.lol's `routeset` (which takes the aircraft's current position
+and reports whether the route it found is *plausible* for where the
+aircraft actually is — the closest thing to verification available), then
+adsbdb. "Unknown", an implausible match, or a failed lookup all show
+nothing. Only airline flight IDs are looked up at all; a tail number has no
+published route, so asking would just spend a volunteer database's quota on
+a guaranteed miss.
+
+**The airline name** comes from the callsign. An airliner's ADS-B callsign
+*is* its operator's registered ICAO designator plus a flight number — DAL2411
+is "Delta 2411" — so `airlines.ts` resolves the designator to the operator's
+name. That's reading a published identifier, not inferring one; an
+unrecognised designator shows nothing rather than a guess. This is
+deliberately separate from the `Owner/Operator` field, which is the
+airframe's registered owner and is often a leasing company or a regional
+partner flying under a mainline callsign.
 
 ## The basemap
 

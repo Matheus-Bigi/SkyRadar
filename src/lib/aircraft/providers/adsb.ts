@@ -1,3 +1,4 @@
+import { airlineFromCallsign } from "../airlines";
 import { classifyAircraft } from "../classify";
 import {
   Aircraft,
@@ -174,6 +175,12 @@ function parseAircraft(raw: unknown): Aircraft | null {
   const aircraftType = str(r.t);
   const aircraftModel = str(r.desc);
   const operator = str(r.ownOp);
+  // The callsign of a commercial flight *is* the operator's registered ICAO
+  // designator plus a flight number, so naming it states a published fact
+  // rather than guessing. `operator` above is the airframe's registered
+  // owner, which is often a leasing company or a regional partner — the two
+  // are genuinely different things, and both are shown as such.
+  const airline = airlineFromCallsign(callsign)?.name;
   // Bit 0 of dbFlags marks military in the aggregators' shared aircraft DB.
   const dbFlags = num(r.dbFlags) ?? 0;
 
@@ -181,6 +188,7 @@ function parseAircraft(raw: unknown): Aircraft | null {
     aircraftType,
     aircraftModel,
     operator,
+    airline,
     callsign,
     registration,
     providerFlaggedMilitary: (dbFlags & 1) === 1,
@@ -194,6 +202,7 @@ function parseAircraft(raw: unknown): Aircraft | null {
     aircraftType,
     aircraftModel,
     operator,
+    airline,
     category: classification.category,
     silhouette: classification.silhouette,
     isMilitary: classification.isMilitary,

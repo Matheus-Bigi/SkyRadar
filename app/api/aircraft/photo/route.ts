@@ -4,21 +4,26 @@ import { lookupAircraftPhoto } from "@/lib/aircraft/photo";
 export const dynamic = "force-dynamic";
 
 /**
- * On-demand aircraft photo lookup, called only when a user expands an
- * aircraft card (spec #22 — "additional information can load
- * asynchronously"). Kept separate from the main polling endpoint so photo
- * lookups never slow down the live radar refresh loop.
+ * Per-aircraft photo lookup, called when a card opens. Kept separate from
+ * the main polling endpoint so photo lookups never slow down the live radar
+ * refresh loop.
+ *
+ * Accepts the ICAO 24-bit address as well as the registration: the hex is
+ * broadcast by every aircraft, while the registration depends on a database
+ * lookup the feed may not have been able to make.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const registration = searchParams.get("registration");
-  if (!registration) {
-    return NextResponse.json({ imageUrl: null, attribution: null });
+  const registration = searchParams.get("registration") ?? undefined;
+  const icao24 = searchParams.get("hex") ?? undefined;
+
+  if (!registration && !icao24) {
+    return NextResponse.json({ imageUrl: null, attribution: null, link: null });
   }
 
-  const { imageUrl, attribution } = await lookupAircraftPhoto(registration);
+  const { imageUrl, attribution, link } = await lookupAircraftPhoto({ registration, icao24 });
   return NextResponse.json(
-    { imageUrl: imageUrl ?? null, attribution: attribution ?? null },
+    { imageUrl: imageUrl ?? null, attribution: attribution ?? null, link: link ?? null },
     { headers: { "Cache-Control": "public, max-age=3600" } }
   );
 }
