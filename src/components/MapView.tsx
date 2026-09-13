@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Map as MapLibreMap, GeoJSONSource } from "maplibre-gl";
+import { useEffect, useRef, useState } from "react";
+import { Map as MapLibreMap, GeoJSONSource, ErrorEvent as MapLibreErrorEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { LatLon, milesToMeters } from "../lib/geo";
 import { nearbyAirports } from "../lib/airports";
@@ -9,7 +9,12 @@ import { applyMapLayerVisibility, ensureAirportLayers, AIRPORTS_SOURCE_ID } from
 import { usePreferencesStore } from "../store/usePreferencesStore";
 import { RangeMiles } from "../store/useRadarStore";
 
-const DARK_STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+// Two independent, keyless vector-tile providers: if the primary is slow,
+// blocked, or down, we fall back automatically rather than leaving the
+// radar without any geographic backdrop at all.
+const PRIMARY_STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+const FALLBACK_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+const STYLE_LOAD_TIMEOUT_MS = 8000;
 const EARTH_CIRCUMFERENCE_PX_AT_Z0 = 156543.03392;
 
 function computeZoom(latitude: number, radiusMeters: number, desiredRadiusPx: number): number {
@@ -30,13 +35,16 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const styleLoadedRef = useRef(false);
+  const styleAttemptRef = useRef<"primary" | "fallback">("primary");
+  const styleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefs = usePreferencesStore();
+  const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: DARK_STYLE_URL,
+      style: PRIMARY_STYLE_URL,
       center: [center.longitude, center.latitude],
       zoom: 10,
       attributionControl: { compact: true },
@@ -51,6 +59,32 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
     map.keyboard.disable();
     map.dragPan.disable();
 
+    const clearStyleTimeout = () => {
+      if (styleTimeoutRef.current) clearTimeout(styleTimeoutRef.current);
+      styleTimeoutRef.current = null;
+    };
+    const armStyleTimeout = () => {
+      clearStyleTimeout();
+      styleTimeoutRef.current = setTimeout(() => handleStyleFailure("timed out loading"), STYLE_LOAD_TIMEOUT_MS);
+    };
+    const handleStyleFailure = (reason: string) => {
+      if (styleLoadedRef.current) return; // a style already loaded — ignore later, unrelated errors
+      if (styleAttemptRef.current === "primary") {
+        styleAttemptRef.current = "fallback";
+        setMapError(`Primary map style ${reason} — trying fallback`);
+        armStyleTimeout();
+        map.setStyle(FALLBACK_STYLE_URL);
+      } else {
+        clearStyleTimeout();
+        setMapError(`Map unavailable (${reason}). Radar and aircraft still work — this only affects the background map.`);
+      }
+    };
+
+    map.on("error", (e: MapLibreErrorEvent) => {
+      if (styleLoadedRef.current) return;
+      handleStyleFailure(e.error?.message?.slice(0, 120) || "failed to load");
+    });
+
     // Expose the map as soon as it exists, not once the style/tiles finish
     // loading: `map.project()`/`map.on('click', ...)` are pure camera-transform
     // and DOM-interaction features that work immediately, and the radar
@@ -59,9 +93,12 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
     // the airports source/layers, toggling layer visibility) waits for 'load'.
     mapRef.current = map;
     onMapReady(map);
+    armStyleTimeout();
 
     map.on("load", () => {
+      clearStyleTimeout();
       styleLoadedRef.current = true;
+      setMapError(null);
       ensureAirportLayers(map);
       applyMapLayerVisibility(map, {
         roads: prefs.roadsEnabled,
@@ -70,6 +107,7 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
       });
     });
     return () => {
+      clearStyleTimeout();
       map.remove();
       mapRef.current = null;
       styleLoadedRef.current = false;
@@ -137,15 +175,24 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
     });
   }, [center, rangeMiles, prefs.airportsEnabled]);
 
-  // MapLibre's own stylesheet sets `.maplibregl-map { position: relative }`
-  // on the element we hand it, which — depending on CSS import order — can
-  // outrank Tailwind's `.absolute` utility on the very same element and
-  // collapse it to zero height. Sizing this div with explicit inline
-  // width/height (rather than relying on `position: absolute` + `inset-0`
-  // to stretch it) sidesteps that cascade fight entirely.
   return (
-    <div className="absolute inset-0">
-      <div ref={containerRef} style={{ width: "100%", height: "100%" }} aria-hidden="true" />
-    </div>
+    <>
+      {/*
+        MapLibre's own stylesheet sets `.maplibregl-map { position: relative }`
+        on the element we hand it, which — depending on CSS import order — can
+        outrank Tailwind's `.absolute` utility on the very same element and
+        collapse it to zero height. Sizing this div with explicit inline
+        width/height (rather than relying on `position: absolute` + `inset-0`
+        to stretch it) sidesteps that cascade fight entirely.
+      */}
+      <div className="absolute inset-0">
+        <div ref={containerRef} style={{ width: "100%", height: "100%" }} aria-hidden="true" />
+      </div>
+      {mapError && (
+        <div className="pointer-events-none absolute inset-x-3 top-24 z-10 rounded-md border border-radar-panelborder bg-radar-panel/85 px-3 py-1.5 text-center font-mono text-[9px] leading-tight text-radar-textdim backdrop-blur-sm">
+          {mapError}
+        </div>
+      )}
+    </>
   );
 }

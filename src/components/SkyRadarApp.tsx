@@ -24,6 +24,7 @@ import OverlapPicker from "./OverlapPicker";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceHeading } from "../hooks/useDeviceHeading";
 import { useAircraftData } from "../hooks/useAircraftData";
+import { useReverseGeocode } from "../hooks/useReverseGeocode";
 import { useAmbientMode } from "../hooks/useAmbientMode";
 import { useAircraftStore } from "../store/useAircraftStore";
 import { useRadarStore } from "../store/useRadarStore";
@@ -48,6 +49,7 @@ export default function SkyRadarApp() {
   const [skyViewOpen, setSkyViewOpen] = useState(false);
 
   useAircraftData(geo.position, radar.rangeMiles);
+  const placeName = useReverseGeocode(geo.position);
 
   // Derived directly from the data store (not from canvas rendering) so the
   // empty state stays correct even if the map's tiles are slow or fail to
@@ -118,6 +120,7 @@ export default function SkyRadarApp() {
         categoryFilter={radar.categoryFilter}
         selectedAircraftId={selection.selectedAircraftId}
         lockCenter={radar.lockCenter}
+        placeName={placeName}
         prefs={{
           radarGraphicsEnabled: prefs.radarGraphicsEnabled,
           aircraftTrailsEnabled: prefs.aircraftTrailsEnabled,
