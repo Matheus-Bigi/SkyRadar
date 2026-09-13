@@ -93,23 +93,42 @@ Planespotters.net API by registration.
 
 ```
 AircraftDataProvider (src/lib/aircraft/types.ts)
-    ├── Flightradar24Provider   — real FR24 API, server-side only
-    └── MockAircraftProvider    — local live-traffic simulator (default)
+    ├── Flightradar24Provider   — real FR24 API (paid), server-side only
+    ├── OpenSkyProvider         — real OpenSky Network API (free, default)
+    └── MockAircraftProvider    — local fake-traffic simulator (dev-only opt-in)
 ```
 
-Set `FR24_API_KEY` (and optionally `FR24_API_BASE_URL`) in `.env.local` to
-switch to the real Flightradar24 API — see `.env.example`. The key is read
-only inside the `/api/aircraft` route handler and is never sent to the
-client. Flightradar24's API schema can vary by plan/version; field parsing
-in `flightradar24.ts` is defensive (every field optional) but double-check
-field names against your account's docs if you wire up real credentials.
+**SkyRadar's rule: it never shows an aircraft, number, or value that isn't
+real and at your real location.** The simulator exists purely for local
+development and is never selected automatically — see below.
 
-Without a key, `MockAircraftProvider` runs a small live simulation: aircraft
-spawn with a plausible callsign/type/operator/altitude/speed for their
-category, then move continuously (great-circle stepping, slow heading
-drift, gradual altitude changes) between polls, and eventually "land"
-(are removed) — so the rest of the app exercises the exact same
-airborne-only, no-stale-data lifecycle it would against live data.
+By default (no configuration needed) SkyRadar uses **OpenSky Network**
+(`opensky.ts`) — a free, keyless, real ADS-B data source. Anonymous access
+is rate-limited, so a short server-side cache keeps outbound requests
+well-spaced regardless of how often the client polls; set
+`OPENSKY_USERNAME`/`OPENSKY_PASSWORD` (a free OpenSky account) for a higher
+quota. OpenSky's free tier only reports position/callsign/speed/altitude/
+heading — not registration, aircraft type, model, or operator, so those
+fields are simply hidden in the UI rather than guessed.
+
+Set `FR24_API_KEY` (and optionally `FR24_API_BASE_URL`) in `.env.local` to
+use the real Flightradar24 API instead (richer metadata, but a paid plan)
+— see `.env.example`. The key is read only inside the `/api/aircraft` route
+handler and is never sent to the client. Flightradar24's API schema can
+vary by plan/version; field parsing in `flightradar24.ts` is defensive
+(every field optional) but double-check field names against your
+account's docs if you wire up real credentials.
+
+`MockAircraftProvider` (a small live simulation: aircraft spawn with a
+plausible callsign/type/operator/altitude/speed for their category, then
+move continuously and eventually "land") only ever runs if you explicitly
+set `AIRCRAFT_PROVIDER=mock` — intended for developing/testing without any
+network calls. The UI shows a permanent "SIMULATED DATA" watermark whenever
+it's active, and this should never be set in a real deployment.
+
+If a real provider's request fails (rate-limited, network error, etc.),
+`/api/aircraft` returns an error and the app shows a "LIVE DATA UNAVAILABLE"
+status — it never silently substitutes fake aircraft.
 
 ## Design language
 
