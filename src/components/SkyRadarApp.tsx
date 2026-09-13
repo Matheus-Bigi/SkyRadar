@@ -25,7 +25,6 @@ import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceHeading } from "../hooks/useDeviceHeading";
 import { useAircraftData } from "../hooks/useAircraftData";
 import { useReverseGeocode } from "../hooks/useReverseGeocode";
-import { useAmbientMode } from "../hooks/useAmbientMode";
 import { useAircraftStore } from "../store/useAircraftStore";
 import { useRadarStore } from "../store/useRadarStore";
 import { useSelectionStore } from "../store/useSelectionStore";
@@ -41,7 +40,6 @@ export default function SkyRadarApp() {
   const prefs = usePreferencesStore();
   const selection = useSelectionStore();
   const aircraftStore = useAircraftStore();
-  const ambient = useAmbientMode(9000);
 
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -104,8 +102,6 @@ export default function SkyRadarApp() {
     );
   }
 
-  const chromeHidden = ambient.ambient && !selection.selectedAircraftId && !settingsOpen && !layersOpen;
-
   return (
     <main className="relative h-full w-full select-none overflow-hidden bg-radar-bg">
       <MapView
@@ -150,24 +146,23 @@ export default function SkyRadarApp() {
         error={aircraftStore.error}
       />
 
-      <div
-        className={clsx(
-          "absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 transition-opacity duration-700",
-          chromeHidden && "pointer-events-none opacity-0"
-        )}
-      >
+      <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-3">
         <div className="flex-1">
           <TopBar status={aircraftStore.status} onOpenSettings={() => setSettingsOpen(true)} />
         </div>
       </div>
 
-      <div
-        className={clsx(
-          "absolute right-3 top-16 z-20 flex flex-col items-end gap-2 transition-opacity duration-700",
-          ambient.ambient ? "opacity-50" : "opacity-100"
-        )}
-      >
-        <CompassWidget heading={heading.heading} />
+      {/*
+        Every control lives in this one right-hand rail. They used to sit
+        across the bottom of the screen, where they covered the lower part of
+        the radar — exactly where aircraft to the south appear. The rail keeps
+        the whole scope clear, and scrolls if a short screen can't fit it all.
+      */}
+      <div className="no-scrollbar absolute bottom-3 right-3 top-16 z-20 flex w-24 flex-col items-stretch gap-2 overflow-y-auto">
+        <div className="flex justify-center">
+          <CompassWidget heading={heading.heading} />
+        </div>
+
         {heading.supported && (
           <button
             onClick={() => {
@@ -178,7 +173,7 @@ export default function SkyRadarApp() {
             aria-pressed={prefs.headingUpMode}
             aria-label="Toggle heading-up rotation"
             className={clsx(
-              "rounded-full border px-2 py-1 font-mono text-[9px] tracking-widest backdrop-blur-sm",
+              "shrink-0 rounded-full border py-1 font-mono text-[9px] tracking-widest backdrop-blur-sm",
               prefs.headingUpMode
                 ? "border-radar-green/40 bg-radar-panel/80 text-radar-green"
                 : "border-radar-panelborder bg-radar-panel/80 text-radar-textdim"
@@ -187,12 +182,13 @@ export default function SkyRadarApp() {
             {prefs.headingUpMode ? "HDG UP" : "N UP"}
           </button>
         )}
+
         <button
           onClick={() => radar.setLockCenter(!radar.lockCenter)}
           aria-pressed={radar.lockCenter}
           aria-label="Lock center on my location"
           className={clsx(
-            "rounded-full border px-2 py-1 font-mono text-[9px] tracking-widest backdrop-blur-sm",
+            "shrink-0 rounded-full border py-1 font-mono text-[9px] tracking-widest backdrop-blur-sm",
             radar.lockCenter
               ? "border-radar-green/40 bg-radar-panel/80 text-radar-green"
               : "border-radar-panelborder bg-radar-panel/80 text-radar-textdim"
@@ -200,15 +196,45 @@ export default function SkyRadarApp() {
         >
           {radar.lockCenter ? "LOCKED" : "FREE"}
         </button>
+
+        <div className="shrink-0">
+          <ModeToggle value={radar.mode} onChange={radar.setMode} />
+        </div>
+
+        <div className="shrink-0">
+          <RangeSelector value={radar.rangeMiles} onChange={radar.setRange} />
+        </div>
+
+        <div className="shrink-0">
+          <CategoryFilterBar value={radar.categoryFilter} onChange={radar.setCategoryFilter} />
+        </div>
+
+        <button
+          onClick={() => setLayersOpen((v) => !v)}
+          aria-pressed={layersOpen}
+          className="shrink-0 rounded-lg border border-radar-panelborder bg-radar-panel/80 px-2 py-1.5 font-mono text-[11px] tracking-wide text-radar-textdim backdrop-blur-sm hover:text-radar-text"
+        >
+          LAYERS
+        </button>
+
+        {prefs.skyViewEnabled && (
+          <button
+            onClick={() => {
+              primeAudio();
+              setSkyViewOpen(true);
+            }}
+            className="shrink-0 rounded-lg bg-radar-green/90 px-2 py-1.5 font-mono text-[11px] tracking-wide text-black shadow-glow"
+          >
+            SKY VIEW
+          </button>
+        )}
       </div>
 
-      <div
-        className={clsx(
-          "absolute inset-x-0 bottom-0 flex flex-col items-center gap-2 p-3 transition-opacity duration-700",
-          chromeHidden && "pointer-events-none opacity-0"
-        )}
-      >
-        {selectedAircraft && geometry && !selection.lookHereActive && (
+      {layersOpen && <LayersPanel onClose={() => setLayersOpen(false)} />}
+
+      {/* Bottom-left, clear of both the scope's centre and the control rail. */}
+      {selectedAircraft && geometry && !selection.lookHereActive && (
+        <div className="absolute bottom-3 left-3 right-28 z-20 max-w-sm">
           <AircraftCard
             aircraft={selectedAircraft}
             geometry={geometry}
@@ -217,37 +243,8 @@ export default function SkyRadarApp() {
             onClose={() => selection.select(null)}
             onLookHere={() => selection.setLookHereActive(true)}
           />
-        )}
-
-        <div className="w-full max-w-md">
-          <CategoryFilterBar value={radar.categoryFilter} onChange={radar.setCategoryFilter} />
         </div>
-
-        <div className="flex w-full max-w-md flex-wrap items-center justify-center gap-2">
-          <RangeSelector value={radar.rangeMiles} onChange={radar.setRange} />
-          <ModeToggle value={radar.mode} onChange={radar.setMode} />
-          <div className="relative">
-            <button
-              onClick={() => setLayersOpen((v) => !v)}
-              className="rounded-lg border border-radar-panelborder bg-radar-panel/80 px-3 py-1.5 font-mono text-[11px] tracking-wide text-radar-textdim backdrop-blur-sm hover:text-radar-text"
-            >
-              LAYERS
-            </button>
-            {layersOpen && <LayersPanel onClose={() => setLayersOpen(false)} />}
-          </div>
-          {prefs.skyViewEnabled && (
-            <button
-              onClick={() => {
-                primeAudio();
-                setSkyViewOpen(true);
-              }}
-              className="rounded-lg bg-radar-green/90 px-4 py-1.5 font-mono text-[11px] tracking-wide text-black shadow-glow"
-            >
-              SKY VIEW
-            </button>
-          )}
-        </div>
-      </div>
+      )}
 
       {selection.lookHereActive && selectedAircraft && geometry && (
         <LookHereOverlay

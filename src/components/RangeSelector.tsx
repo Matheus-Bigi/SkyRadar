@@ -13,7 +13,7 @@ export default function RangeSelector({ value, onChange }: RangeSelectorProps) {
     <div
       role="radiogroup"
       aria-label="Radar range"
-      className="flex gap-1 rounded-lg border border-radar-panelborder bg-radar-panel/80 p-1 backdrop-blur-sm"
+      className="flex w-full flex-col gap-1 rounded-lg border border-radar-panelborder bg-radar-panel/80 p-1 backdrop-blur-sm"
     >
       {RANGE_OPTIONS.map((r) => (
         <button
@@ -22,7 +22,7 @@ export default function RangeSelector({ value, onChange }: RangeSelectorProps) {
           aria-checked={value === r}
           onClick={() => onChange(r)}
           className={clsx(
-            "min-w-[52px] rounded-md px-2.5 py-1.5 font-mono text-[11px] tracking-wide transition-colors",
+            "rounded-md px-2 py-1 font-mono text-[11px] tracking-wide transition-colors",
             value === r
               ? "bg-radar-green/90 text-black shadow-glow"
               : "text-radar-textdim hover:text-radar-text"
