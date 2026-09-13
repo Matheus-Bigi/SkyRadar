@@ -157,15 +157,32 @@ layers — every one of those a way to end up staring at a black screen.
 Raster tiles are just images: they either arrive and you see a map, or they
 don't and the app says so.
 
-Three sources are tried in order — CARTO Dark Matter, Esri Dark Gray, then
-OpenStreetMap (dimmed, since it's a light basemap) — advancing when a
-basemap produces no tile within a few seconds or errors repeatedly. A tile
-actually arriving is the only thing treated as proof the map works.
+Sources are tried in order — Esri Dark Gray (a base coat plus a transparent
+label coat), then OpenStreetMap, dimmed since it's a light basemap —
+advancing when a basemap produces no tile within a few seconds or errors
+repeatedly. A tile actually arriving is the only thing treated as proof the
+map works. CARTO is deliberately absent: its basemaps now stamp "API KEY
+REQUIRED" across every tile.
 
 Place names, roads and landmarks come baked into the tiles, so SkyRadar
-carries no city/neighbourhood/road layers of its own. Its only overlay is a
-dot per nearby airport, drawn as circles rather than labelled symbols
-because a raster style ships no glyphs to render text with.
+carries no city/neighbourhood/road layers of its own — and no overlays at
+all. Airports are drawn by the radar canvas instead (see below), which can
+label them; a raster style ships no glyphs to render text with.
+
+## Compass
+
+Phone and tablet magnetometers drift, and cases, speakers and car dashboards
+throw them off further. Two things address that:
+
+- **Screen-orientation correction.** Both `webkitCompassHeading` and the
+  `alpha` fallback report where the device's *natural top edge* points. Hold
+  an iPad in landscape and that's no longer the top of what you're looking
+  at, so the reading is a clean 90° out until the page's rotation is
+  subtracted.
+- **Manual calibration.** Tap the compass dial to open a panel showing the
+  raw sensor reading, the screen angle, the applied offset and the resulting
+  heading, with nudge buttons to line the radar up with what's actually out
+  the window. The offset persists.
 
 ## Design language
 

@@ -3,15 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Map as MapLibreMap,
-  GeoJSONSource,
   ErrorEvent as MapLibreErrorEvent,
   StyleSpecification,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { LatLon, milesToMeters, normalizeSignedDegrees } from "../lib/geo";
-import { nearbyAirports } from "../lib/airports";
-import { ensureAirportLayers, AIRPORTS_SOURCE_ID } from "../lib/render/mapLayers";
-import { usePreferencesStore } from "../store/usePreferencesStore";
 import { RangeMiles } from "../store/useRadarStore";
 
 /**
@@ -34,82 +30,88 @@ const FIRST_TILE_TIMEOUT_MS = 9000;
 /** Tile errors tolerated before giving up on a basemap that has shown nothing. */
 const MAX_TILE_ERRORS = 8;
 
-interface Basemap {
-  id: string;
+interface BasemapLayer {
   tiles: string[];
   tileSize: number;
   maxzoom: number;
+}
+
+interface Basemap {
+  id: string;
   attribution: string;
   /** Light basemaps get dimmed so the radar overlay stays readable on top. */
   light?: boolean;
+  /** Drawn in order — typically a base coat, then a transparent label coat. */
+  layers: BasemapLayer[];
 }
 
+// CARTO is deliberately absent: its basemaps now stamp "API KEY REQUIRED"
+// across every tile unless you sign up for one.
 const BASEMAPS: Basemap[] = [
   {
-    id: "carto-dark",
-    tiles: [
-      "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-      "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-      "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-      "https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-    ],
-    tileSize: 512,
-    maxzoom: 19,
-    attribution:
-      '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-  },
-  {
     id: "esri-dark",
-    tiles: [
-      "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-    ],
-    tileSize: 256,
-    maxzoom: 16,
     attribution: "© Esri — Esri, HERE, Garmin, © OpenStreetMap contributors",
+    layers: [
+      {
+        tiles: [
+          "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        maxzoom: 16,
+      },
+      // Place names and road labels ride on a separate transparent layer.
+      {
+        tiles: [
+          "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        maxzoom: 16,
+      },
+    ],
   },
   {
     id: "osm",
-    tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-    tileSize: 256,
-    maxzoom: 19,
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     light: true,
+    layers: [{ tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, maxzoom: 19 }],
   },
 ];
 
 function buildStyle(basemap: Basemap): StyleSpecification {
-  return {
-    version: 8,
-    sources: {
-      [BASEMAP_SOURCE_ID]: {
-        type: "raster",
-        tiles: basemap.tiles,
-        tileSize: basemap.tileSize,
-        maxzoom: basemap.maxzoom,
-        attribution: basemap.attribution,
-      },
-    },
-    layers: [
-      // Painted under the tiles so the app's own background shows through
-      // while they stream in, instead of flashing white.
-      { id: "background", type: "background", paint: { "background-color": "#05080a" } },
-      {
-        id: BASEMAP_LAYER_ID,
-        type: "raster",
-        source: BASEMAP_SOURCE_ID,
-        paint: basemap.light
-          ? {
-              // Dim a light basemap rather than inverting it — inversion turns
-              // roads black and land an odd blue, which read as "broken".
-              "raster-opacity": 0.8,
-              "raster-brightness-max": 0.55,
-              "raster-saturation": -0.35,
-              "raster-contrast": 0.1,
-            }
-          : { "raster-opacity": 0.95 },
-      },
-    ],
-  };
+  const sources: StyleSpecification["sources"] = {};
+  const layers: StyleSpecification["layers"] = [
+    // Painted under the tiles so the app's own background shows through
+    // while they stream in, instead of flashing white.
+    { id: "background", type: "background", paint: { "background-color": "#05080a" } },
+  ];
+
+  basemap.layers.forEach((layer, i) => {
+    const sourceId = `${BASEMAP_SOURCE_ID}-${i}`;
+    sources[sourceId] = {
+      type: "raster",
+      tiles: layer.tiles,
+      tileSize: layer.tileSize,
+      maxzoom: layer.maxzoom,
+      attribution: i === 0 ? basemap.attribution : undefined,
+    };
+    layers.push({
+      id: `${BASEMAP_LAYER_ID}-${i}`,
+      type: "raster",
+      source: sourceId,
+      paint: basemap.light
+        ? {
+            // Dim a light basemap rather than inverting it — inversion turns
+            // roads black and land an odd blue, which read as "broken".
+            "raster-opacity": 0.8,
+            "raster-brightness-max": 0.55,
+            "raster-saturation": -0.35,
+            "raster-contrast": 0.1,
+          }
+        : { "raster-opacity": 0.95 },
+    });
+  });
+
+  return { version: 8, sources, layers };
 }
 
 function computeZoom(latitude: number, radiusMeters: number, desiredRadiusPx: number): number {
@@ -142,11 +144,7 @@ export default function MapView({
   const tileLoadedRef = useRef(false);
   const tileErrorsRef = useRef(0);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prefs = usePreferencesStore();
   const [mapError, setMapError] = useState<string | null>(null);
-  // Bumped on every style load so style-dependent setup (our airport overlay)
-  // re-runs — setStyle wipes anything we added to the previous style.
-  const [styleEpoch, setStyleEpoch] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -199,7 +197,7 @@ export default function MapView({
 
     // A tile actually arriving is the only proof the map is really working.
     map.on("data", (e) => {
-      if (e.dataType !== "source" || e.sourceId !== BASEMAP_SOURCE_ID) return;
+      if (e.dataType !== "source" || !e.sourceId?.startsWith(BASEMAP_SOURCE_ID)) return;
       if (!("tile" in e) || !e.tile) return;
       tileLoadedRef.current = true;
       tileErrorsRef.current = 0;
@@ -208,17 +206,12 @@ export default function MapView({
     });
 
     map.on("error", (e: MapLibreErrorEvent & { sourceId?: string }) => {
-      if (e.sourceId && e.sourceId !== BASEMAP_SOURCE_ID) return;
+      if (e.sourceId && !e.sourceId.startsWith(BASEMAP_SOURCE_ID)) return;
       if (tileLoadedRef.current) return; // an odd tile failing on a working map is fine
       tileErrorsRef.current += 1;
       if (tileErrorsRef.current >= MAX_TILE_ERRORS) {
         switchBasemap(basemapIndexRef.current + 1, e.error?.message?.slice(0, 80) || "failed");
       }
-    });
-
-    map.on("style.load", () => {
-      ensureAirportLayers(map);
-      setStyleEpoch((n) => n + 1);
     });
 
     // Expose the map as soon as it exists rather than once tiles arrive:
@@ -271,32 +264,6 @@ export default function MapView({
     if (!headingUpMode) map.easeTo({ bearing: 0, duration: 300 });
     else map.setBearing(target);
   }, [headingUpMode, userHeading]);
-
-  // Airports overlay, refreshed as center/range/toggle change — and after any
-  // style load, which drops everything we previously added.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const source = map.getSource(AIRPORTS_SOURCE_ID) as GeoJSONSource | undefined;
-    if (!source) return;
-
-    if (!prefs.airportsEnabled) {
-      source.setData({ type: "FeatureCollection", features: [] });
-      return;
-    }
-
-    const contextRadiusMeters = milesToMeters(rangeMiles * 1.4);
-    const airports = nearbyAirports(center, contextRadiusMeters);
-
-    source.setData({
-      type: "FeatureCollection",
-      features: airports.map((a) => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [a.longitude, a.latitude] },
-        properties: { label: a.iata ?? a.icao, size: a.size, name: a.name },
-      })),
-    });
-  }, [center, rangeMiles, prefs.airportsEnabled, styleEpoch]);
 
   return (
     <>

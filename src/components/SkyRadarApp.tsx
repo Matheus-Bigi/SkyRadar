@@ -11,6 +11,7 @@ import RangeSelector from "./RangeSelector";
 import ModeToggle from "./ModeToggle";
 import CategoryFilterBar from "./CategoryFilterBar";
 import CompassWidget from "./CompassWidget";
+import CompassCalibration from "./CompassCalibration";
 import LayersPanel from "./LayersPanel";
 import SettingsPanel from "./SettingsPanel";
 import AircraftCard from "./AircraftCard";
@@ -30,6 +31,7 @@ import { useRadarStore } from "../store/useRadarStore";
 import { useSelectionStore } from "../store/useSelectionStore";
 import { usePreferencesStore } from "../store/usePreferencesStore";
 import { deriveGeometry, distanceMeters, feetToMeters, milesToMeters } from "../lib/geo";
+import { nearbyAirports } from "../lib/airports";
 import { primeAudio } from "../lib/audio/radarBeep";
 import { Aircraft } from "../lib/aircraft/types";
 
@@ -45,6 +47,7 @@ export default function SkyRadarApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [skyViewOpen, setSkyViewOpen] = useState(false);
+  const [calibrationOpen, setCalibrationOpen] = useState(false);
 
   useAircraftData(geo.position, radar.rangeMiles);
   const placeName = useReverseGeocode(geo.position);
@@ -85,6 +88,18 @@ export default function SkyRadarApp() {
     );
   }, [selectedAircraft, geo.position, geo.altitudeMeters, heading.heading]);
 
+  // Airports within a little beyond the current ring, so one just outside
+  // the edge still gives you something to orient by.
+  const airports = useMemo(() => {
+    if (!geo.position) return [];
+    return nearbyAirports(geo.position, milesToMeters(radar.rangeMiles * 1.25)).map((a) => ({
+      latitude: a.latitude,
+      longitude: a.longitude,
+      label: a.iata ?? a.icao,
+      major: a.size === "major",
+    }));
+  }, [geo.position, radar.rangeMiles]);
+
   const skyViewAircraft = useMemo(() => {
     return aircraftStore.current.filter(
       (a) => radar.categoryFilter === "ALL" || a.category === radar.categoryFilter
@@ -115,6 +130,7 @@ export default function SkyRadarApp() {
 
       <RadarCanvas
         map={mapInstance}
+        airports={airports}
         userPosition={geo.position}
         userAltitudeMeters={geo.altitudeMeters ?? 0}
         userHeading={heading.heading}
@@ -127,6 +143,7 @@ export default function SkyRadarApp() {
         placeName={placeName}
         prefs={{
           radarGraphicsEnabled: prefs.radarGraphicsEnabled,
+          airportsEnabled: prefs.airportsEnabled,
           aircraftTrailsEnabled: prefs.aircraftTrailsEnabled,
           showCallsigns: prefs.showCallsigns,
           militaryHighlighting: prefs.militaryHighlighting,
@@ -160,7 +177,7 @@ export default function SkyRadarApp() {
       */}
       <div className="no-scrollbar absolute bottom-3 right-3 top-16 z-20 flex w-24 flex-col items-stretch gap-2 overflow-y-auto">
         <div className="flex justify-center">
-          <CompassWidget heading={heading.heading} />
+          <CompassWidget heading={heading.heading} onCalibrate={() => setCalibrationOpen((v) => !v)} />
         </div>
 
         {heading.supported && (
@@ -231,6 +248,9 @@ export default function SkyRadarApp() {
       </div>
 
       {layersOpen && <LayersPanel onClose={() => setLayersOpen(false)} />}
+      {calibrationOpen && (
+        <CompassCalibration heading={heading} onClose={() => setCalibrationOpen(false)} />
+      )}
 
       {/* Bottom-left, clear of both the scope's centre and the control rail. */}
       {selectedAircraft && geometry && !selection.lookHereActive && (

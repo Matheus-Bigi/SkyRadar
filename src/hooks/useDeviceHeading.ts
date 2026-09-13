@@ -2,11 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeDegrees } from "../lib/geo";
+import { usePreferencesStore } from "../store/usePreferencesStore";
 
 export type HeadingPermission = "unknown" | "granted" | "denied" | "unnecessary";
 
 export interface DeviceHeadingState {
+  /** Sensor heading with the user's calibration offset applied — use this. */
   heading: number | null;
+  /** Screen-orientation corrected but uncalibrated, for the calibration UI. */
+  rawHeading: number | null;
+  /** How far the page is rotated from the device's natural orientation. */
+  screenAngle: number;
   supported: boolean;
   permission: HeadingPermission;
   needsCalibration: boolean;
@@ -18,7 +24,22 @@ interface IOSDeviceOrientationEvent {
 }
 
 /**
- * Device compass heading (0-360, 0 = true/magnetic north), fused from the
+ * How far the page is rotated from the device's natural orientation.
+ *
+ * Screen Orientation's `angle` and legacy iOS `window.orientation` measure
+ * the same rotation in opposite senses, so the legacy value is negated to
+ * match.
+ */
+function currentScreenAngle(): number {
+  if (typeof window === "undefined") return 0;
+  const angle = window.screen?.orientation?.angle;
+  if (typeof angle === "number") return normalizeDegrees(angle);
+  const legacy = (window as unknown as { orientation?: number }).orientation;
+  return typeof legacy === "number" ? normalizeDegrees(-legacy) : 0;
+}
+
+/**
+ * Device compass heading (0-360, 0 = north), fused from the
  * `deviceorientation`/`deviceorientationabsolute` events the browser derives
  * from the magnetometer + gyroscope + accelerometer (spec #17, #46).
  *
@@ -27,13 +48,14 @@ interface IOSDeviceOrientationEvent {
  * blocking the rest of the app (spec #48).
  */
 export function useDeviceHeading(): DeviceHeadingState {
-  const [heading, setHeading] = useState<number | null>(null);
+  const [reading, setReading] = useState<{ heading: number; screenAngle: number } | null>(null);
   const [supported, setSupported] = useState(true);
   const [permission, setPermission] = useState<HeadingPermission>("unknown");
   const [needsCalibration, setNeedsCalibration] = useState(false);
   const lastHeadingRef = useRef<number | null>(null);
   const jitterWindowRef = useRef<number[]>([]);
   const lastEventAtRef = useRef<number>(0);
+  const offset = usePreferencesStore((s) => s.headingOffsetDeg);
 
   const handleOrientation = useCallback((event: DeviceOrientationEvent) => {
     lastEventAtRef.current = Date.now();
@@ -42,23 +64,26 @@ export function useDeviceHeading(): DeviceHeadingState {
     const webkitAccuracy = (event as unknown as { webkitCompassAccuracy?: number })
       .webkitCompassAccuracy;
 
-    let value: number | null = null;
+    // Both sources describe where the *device's natural top edge* points.
+    let deviceTopHeading: number | null = null;
     if (typeof webkitHeading === "number" && !Number.isNaN(webkitHeading)) {
-      value = webkitHeading;
+      deviceTopHeading = webkitHeading;
       if (typeof webkitAccuracy === "number" && (webkitAccuracy < 0 || webkitAccuracy > 35)) {
         setNeedsCalibration(true);
       } else {
         setNeedsCalibration(false);
       }
     } else if (event.alpha !== null) {
-      const screenAngle =
-        typeof window !== "undefined" && window.screen?.orientation
-          ? window.screen.orientation.angle
-          : 0;
-      value = normalizeDegrees(360 - event.alpha + screenAngle);
+      deviceTopHeading = normalizeDegrees(360 - event.alpha);
     }
 
-    if (value === null) return;
+    if (deviceTopHeading === null) return;
+
+    // Hold the iPad in landscape and the natural top edge is no longer the
+    // top of what you're looking at — the browser has rotated the page.
+    // Without this the compass is a clean 90° out in landscape.
+    const screenAngle = currentScreenAngle();
+    const value = normalizeDegrees(deviceTopHeading - screenAngle);
 
     if (lastHeadingRef.current !== null) {
       let delta = value - lastHeadingRef.current;
@@ -73,7 +98,7 @@ export function useDeviceHeading(): DeviceHeadingState {
       }
     }
     lastHeadingRef.current = value;
-    setHeading(value);
+    setReading({ heading: value, screenAngle });
   }, []);
 
   useEffect(() => {
@@ -136,5 +161,14 @@ export function useDeviceHeading(): DeviceHeadingState {
     return () => clearTimeout(t);
   }, [permission]);
 
-  return { heading, supported, permission, needsCalibration, requestPermission };
+  const rawHeading = reading?.heading ?? null;
+  return {
+    heading: rawHeading === null ? null : normalizeDegrees(rawHeading + offset),
+    rawHeading,
+    screenAngle: reading?.screenAngle ?? 0,
+    supported,
+    permission,
+    needsCalibration,
+    requestPermission,
+  };
 }
