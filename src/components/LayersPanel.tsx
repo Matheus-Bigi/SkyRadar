@@ -10,8 +10,6 @@ const LAYER_ITEMS: { key: BooleanPrefKey; label: string }[] = [
   { key: "radarGraphicsEnabled", label: "Radar" },
   { key: "aircraftTrailsEnabled", label: "Aircraft Trails" },
   { key: "airportsEnabled", label: "Airports" },
-  { key: "citiesEnabled", label: "Cities" },
-  { key: "neighborhoodsEnabled", label: "Neighborhoods" },
   { key: "skyViewEnabled", label: "Sky View" },
   { key: "radarSoundEnabled", label: "Radar Sound" },
 ];

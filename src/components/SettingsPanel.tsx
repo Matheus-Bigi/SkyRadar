@@ -81,9 +81,6 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <Section title="MAP">
           <ToggleRow label="Airports" {...bool("airportsEnabled")} />
-          <ToggleRow label="City labels" {...bool("citiesEnabled")} />
-          <ToggleRow label="Neighborhood labels" {...bool("neighborhoodsEnabled")} />
-          <ToggleRow label="Roads" {...bool("roadsEnabled")} />
         </Section>
 
         <Section title="AIRCRAFT">
