@@ -117,6 +117,7 @@ export default function SkyRadarApp() {
         rangeMiles={radar.rangeMiles}
         categoryFilter={radar.categoryFilter}
         selectedAircraftId={selection.selectedAircraftId}
+        lockCenter={radar.lockCenter}
         prefs={{
           radarGraphicsEnabled: prefs.radarGraphicsEnabled,
           aircraftTrailsEnabled: prefs.aircraftTrailsEnabled,
