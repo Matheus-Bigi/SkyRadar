@@ -395,14 +395,34 @@ function drawUserMarker(
   ctx.restore();
 
   // Small "you are here" place name — confirms SkyRadar has your actual
-  // location even when the map's own background tiles aren't visible.
+  // location even when the map's own background tiles aren't visible. A
+  // dark pill sits behind the text so it stays legible against both the
+  // dark primary map style and the inverted light fallback style.
   if (placeName) {
     ctx.save();
     ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
-    ctx.fillStyle = THEME.labelDim;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(placeName.toUpperCase(), x, y + (radarMode ? 8 : 6) + 6);
+    const label = placeName.toUpperCase();
+    const labelY = y + (radarMode ? 8 : 6) + 6;
+    const metrics = ctx.measureText(label);
+    const paddingX = 5;
+    const paddingY = 3;
+    const pillWidth = metrics.width + paddingX * 2;
+    const pillHeight = 10 + paddingY * 2;
+    ctx.fillStyle = "rgba(4, 12, 10, 0.72)";
+    ctx.beginPath();
+    const radius = pillHeight / 2;
+    const left = x - pillWidth / 2;
+    const top = labelY - paddingY;
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(left, top, pillWidth, pillHeight, radius);
+    } else {
+      ctx.rect(left, top, pillWidth, pillHeight);
+    }
+    ctx.fill();
+    ctx.fillStyle = THEME.labelDim;
+    ctx.fillText(label, x, labelY);
     ctx.restore();
   }
 }
