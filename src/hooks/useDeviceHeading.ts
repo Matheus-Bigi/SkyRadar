@@ -123,12 +123,18 @@ export function useDeviceHeading(): DeviceHeadingState {
   // If we haven't received an orientation event in a while, we may be on a
   // desktop / non-sensor device — don't leave the UI thinking heading is
   // "loading" forever.
+  //
+  // Only once we're actually listening, though. iOS withholds orientation
+  // events until the user grants motion access through a tap, so silence
+  // before that says nothing about the hardware. Treating it as "no sensor"
+  // hid the very control the user has to tap to grant access.
   useEffect(() => {
+    if (permission !== "unnecessary" && permission !== "granted") return;
     const t = setTimeout(() => {
       if (lastEventAtRef.current === 0) setSupported(false);
     }, 3000);
     return () => clearTimeout(t);
-  }, []);
+  }, [permission]);
 
   return { heading, supported, permission, needsCalibration, requestPermission };
 }
