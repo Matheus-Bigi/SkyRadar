@@ -24,8 +24,10 @@
 import {
   LatLon,
   alongTrackDistanceMeters,
+  bearingDegrees,
   crossTrackDistanceMeters,
   distanceMeters,
+  normalizeSignedDegrees,
 } from "../geo";
 import { isAirlineFlightId } from "./airlines";
 
@@ -64,16 +66,47 @@ const FETCH_TIMEOUT_MS = 7000;
  * How much further the aircraft would have to fly, going via where it
  * actually is, than the direct origin→destination distance.
  *
- * This is the primary test, and it separates real cases from wrong ones far
- * more cleanly than raw distance-from-the-path does. Measured against the
- * reported failure — ASA642 over Portland, which adsb.lol called Seattle→
- * Denver while it was really flying Portland→Newark — a genuine Seattle→LA
- * overflight of Portland costs 17km of detour and a real westward weather
- * deviation 52km, while the bogus Seattle→Denver leg costs 118km. It also
- * catches "behind the origin" and "past the destination" for free: flying
- * backwards adds detour like anything else does.
+ * Measured against the first reported failure — ASA642 over Portland, which
+ * adsb.lol called Seattle→Denver while it was really flying Portland→Newark
+ * — a genuine Seattle→LA overflight of Portland costs 17km of detour and a
+ * real westward weather deviation 52km, while the bogus Seattle→Denver leg
+ * costs 118km. It also catches "behind the origin" and "past the
+ * destination" for free: flying backwards adds detour like anything else.
  */
 const MAX_DETOUR_METERS = 80_000;
+
+/**
+ * Below this, an aircraft is in a terminal area rather than cruising.
+ */
+const TERMINAL_ALTITUDE_FT = 10_000;
+/** Vertical speed that counts as genuinely climbing or descending. */
+const CLIMB_RATE_FPM = 250;
+/**
+ * How far an aircraft at a given altitude can still be from the airport it
+ * is descending into (or has just climbed out of).
+ *
+ * Airliners plan a descent at roughly 3 nautical miles per 1,000 feet — the
+ * "3:1 rule" every pilot uses. This allows six times that, plus an 80km
+ * floor, so shallow approaches, turboprops and early descents all pass
+ * comfortably. What it does *not* allow is the second reported failure:
+ * ASA638 at 2,100 feet, descending 704 fpm on final approach to Portland,
+ * with adsb.lol claiming a destination 1,777km away in Tucson. No corridor
+ * check could ever catch that one — Portland genuinely lies near the
+ * Seattle→Tucson path, so the detour was a mere 38km — but the aircraft's
+ * own altitude makes it impossible.
+ */
+function maxTerminalDistanceMeters(altitudeFt: number): number {
+  const threeToOneNm = (Math.max(0, altitudeFt) / 1000) * 3;
+  return Math.max(80_000, threeToOneNm * 1852 * 6);
+}
+/**
+ * Once genuinely en route — well clear of both airports, so not maneuvering
+ * in a terminal area — an aircraft should be pointing broadly at where it is
+ * going. Generous, because airways are not straight lines; it exists to
+ * catch a route listed back-to-front, not to police minor turns.
+ */
+const ENROUTE_CLEARANCE_METERS = 150_000;
+const MAX_TRACK_ERROR_DEG = 100;
 /**
  * How far to the side of the direct path an aircraft may sit.
  *
@@ -86,12 +119,32 @@ const MAX_DETOUR_METERS = 80_000;
  */
 const MAX_CORRIDOR_METERS = 150_000;
 
+/**
+ * What the aircraft itself is doing. Altitude and vertical speed pin down
+ * the phase of flight, which turns out to be the single most decisive test
+ * available — far stronger than corridor geometry.
+ */
+export interface AircraftState {
+  position: LatLon;
+  /** Feet above sea level. */
+  altitude?: number;
+  /** Feet per minute; negative is descending. */
+  verticalSpeed?: number;
+  /** Degrees true. */
+  track?: number;
+}
+
 export interface RouteVerdict {
   accepted: boolean;
   /** Why it was rejected, for the diagnostics endpoint. */
   reason?: string;
-  /** Extra distance flown by going via the aircraft — the primary test. */
+  /** Extra distance flown by going via the aircraft. */
   detourKm?: number;
+  /** Distance to the claimed origin / destination, in km. */
+  toOriginKm?: number;
+  toDestinationKm?: number;
+  /** What the aircraft's altitude and vertical speed say it is doing. */
+  phase?: "arriving" | "departing" | "enroute";
   crossTrackKm?: number;
   alongTrackKm?: number;
   routeLengthKm?: number;
@@ -103,9 +156,9 @@ export interface RouteVerdict {
  */
 export function verifyRouteAgainstPosition(
   candidate: RouteCandidate,
-  position?: LatLon
+  aircraft?: AircraftState
 ): RouteVerdict {
-  if (!position) {
+  if (!aircraft) {
     return { accepted: false, reason: "no aircraft position to check against" };
   }
   const { originPosition, destinationPosition } = candidate;
@@ -115,27 +168,68 @@ export function verifyRouteAgainstPosition(
     return { accepted: false, reason: "source gave no airport coordinates" };
   }
 
+  const { position, altitude, verticalSpeed, track } = aircraft;
   const routeLength = distanceMeters(originPosition, destinationPosition);
   if (routeLength < 1000) {
     return { accepted: false, reason: "origin and destination are the same place" };
   }
 
+  const toOrigin = distanceMeters(originPosition, position);
+  const toDestination = distanceMeters(position, destinationPosition);
   const crossTrack = Math.abs(
     crossTrackDistanceMeters(position, originPosition, destinationPosition)
   );
   const alongTrack = alongTrackDistanceMeters(position, originPosition, destinationPosition);
-  const viaAircraft =
-    distanceMeters(originPosition, position) + distanceMeters(position, destinationPosition);
-  const detour = viaAircraft - routeLength;
+  const detour = toOrigin + toDestination - routeLength;
+
+  const lowAndSlowEnoughToBeTerminal =
+    altitude !== undefined && altitude < TERMINAL_ALTITUDE_FT;
+  const descending = (verticalSpeed ?? 0) < -CLIMB_RATE_FPM;
+  const climbing = (verticalSpeed ?? 0) > CLIMB_RATE_FPM;
+  const phase: RouteVerdict["phase"] =
+    lowAndSlowEnoughToBeTerminal && descending
+      ? "arriving"
+      : lowAndSlowEnoughToBeTerminal && climbing
+        ? "departing"
+        : "enroute";
 
   const verdict: RouteVerdict = {
     accepted: false,
+    phase,
     detourKm: Math.round(detour / 1000),
     crossTrackKm: Math.round(crossTrack / 1000),
     alongTrackKm: Math.round(alongTrack / 1000),
     routeLengthKm: Math.round(routeLength / 1000),
+    toOriginKm: Math.round(toOrigin / 1000),
+    toDestinationKm: Math.round(toDestination / 1000),
   };
 
+  // --- Phase of flight. The strongest test there is, and the only one that
+  // catches a wrong route which happens to lie along the right corridor. ---
+  if (phase === "arriving" && altitude !== undefined) {
+    const reach = maxTerminalDistanceMeters(altitude);
+    if (toDestination > reach) {
+      return {
+        ...verdict,
+        reason: `descending through ${Math.round(altitude)}ft but the claimed destination is ${Math.round(
+          toDestination / 1000
+        )}km away — it is landing somewhere else`,
+      };
+    }
+  }
+  if (phase === "departing" && altitude !== undefined) {
+    const reach = maxTerminalDistanceMeters(altitude);
+    if (toOrigin > reach) {
+      return {
+        ...verdict,
+        reason: `climbing through ${Math.round(altitude)}ft but the claimed origin is ${Math.round(
+          toOrigin / 1000
+        )}km away — it took off somewhere else`,
+      };
+    }
+  }
+
+  // --- Corridor geometry. Catches a route the aircraft is nowhere near. ---
   if (detour > MAX_DETOUR_METERS) {
     return {
       ...verdict,
@@ -145,7 +239,29 @@ export function verifyRouteAgainstPosition(
     };
   }
   if (crossTrack > MAX_CORRIDOR_METERS) {
-    return { ...verdict, reason: `${Math.round(crossTrack / 1000)}km to the side of the direct path` };
+    return {
+      ...verdict,
+      reason: `${Math.round(crossTrack / 1000)}km to the side of the direct path`,
+    };
+  }
+
+  // --- Direction of travel. Only once clear of both terminal areas, where
+  // an aircraft genuinely should be pointing at its destination. ---
+  if (
+    track !== undefined &&
+    toOrigin > ENROUTE_CLEARANCE_METERS &&
+    toDestination > ENROUTE_CLEARANCE_METERS
+  ) {
+    const wanted = bearingDegrees(position, destinationPosition);
+    const error = Math.abs(normalizeSignedDegrees(track - wanted));
+    if (error > MAX_TRACK_ERROR_DEG) {
+      return {
+        ...verdict,
+        reason: `tracking ${Math.round(track)}° but its claimed destination is ${Math.round(
+          wanted
+        )}° away — flying the wrong way for this route`,
+      };
+    }
   }
 
   return { ...verdict, accepted: true };
@@ -153,16 +269,14 @@ export function verifyRouteAgainstPosition(
 
 export async function lookupFlightRoute(
   callsign: string,
-  latitude?: number,
-  longitude?: number
+  aircraft?: AircraftState
 ): Promise<FlightRouteInfo> {
   const key = callsign.trim().toUpperCase();
   // A tail number has no published route; asking these databases for one only
   // spends someone else's free quota on a guaranteed miss.
   if (!isAirlineFlightId(key)) return {};
 
-  const position =
-    latitude !== undefined && longitude !== undefined ? { latitude, longitude } : undefined;
+  const position = aircraft?.position;
 
   // Cache on callsign *and* rough position: the same callsign genuinely maps
   // to different legs on different days, and a route accepted over Portland
@@ -177,7 +291,7 @@ export async function lookupFlightRoute(
     try {
       const candidate = await source(key, position);
       if (!candidate || (!candidate.origin && !candidate.destination)) continue;
-      if (!verifyRouteAgainstPosition(candidate, position).accepted) continue;
+      if (!verifyRouteAgainstPosition(candidate, aircraft).accepted) continue;
 
       const route: FlightRouteInfo = {
         origin: candidate.origin,
@@ -203,8 +317,9 @@ export async function lookupFlightRoute(
  * diagnostics endpoint — it deliberately bypasses the cache so it always
  * reports what the databases are saying right now.
  */
-export async function probeFlightRoute(callsign: string, position?: LatLon) {
+export async function probeFlightRoute(callsign: string, aircraft?: AircraftState) {
   const key = callsign.trim().toUpperCase();
+  const position = aircraft?.position;
   const results = [];
   for (const [name, source] of [
     ["adsb.lol", fetchFromAdsbLol],
@@ -224,7 +339,7 @@ export async function probeFlightRoute(callsign: string, position?: LatLon) {
               airline: candidate.airline ?? null,
             }
           : null,
-        verdict: candidate ? verifyRouteAgainstPosition(candidate, position) : null,
+        verdict: candidate ? verifyRouteAgainstPosition(candidate, aircraft) : null,
       });
     } catch (err) {
       results.push({

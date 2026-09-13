@@ -11,25 +11,32 @@ export const dynamic = "force-dynamic";
  * so it takes one database request per callsign — fine for the one aircraft
  * a user tapped, ruinous for every aircraft on the scope every few seconds.
  *
- * The aircraft's position is passed through so the upstream source can tell
- * us whether the route it found is plausible for where the aircraft actually
- * is. An unconfirmed route is returned as empty rather than displayed.
+ * The aircraft's position, altitude, vertical speed and track all ride
+ * along, because that is what the route is checked against. Altitude and
+ * vertical speed matter most: an aircraft descending through 2,000 feet is
+ * minutes from a runway, so a claimed destination a thousand miles away is
+ * impossible no matter how well the route lines up on a map. An unconfirmed
+ * route is returned empty rather than displayed.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const callsign = searchParams.get("callsign");
   const lat = parseFloat(searchParams.get("lat") ?? "");
   const lon = parseFloat(searchParams.get("lon") ?? "");
+  const altitude = parseFloat(searchParams.get("altitude") ?? "");
+  const verticalSpeed = parseFloat(searchParams.get("verticalSpeed") ?? "");
+  const track = parseFloat(searchParams.get("track") ?? "");
 
-  if (!callsign) {
+  if (!callsign || !Number.isFinite(lat) || !Number.isFinite(lon)) {
     return NextResponse.json({ origin: null, destination: null });
   }
 
-  const route = await lookupFlightRoute(
-    callsign,
-    Number.isFinite(lat) ? lat : undefined,
-    Number.isFinite(lon) ? lon : undefined
-  );
+  const route = await lookupFlightRoute(callsign, {
+    position: { latitude: lat, longitude: lon },
+    altitude: Number.isFinite(altitude) ? altitude : undefined,
+    verticalSpeed: Number.isFinite(verticalSpeed) ? verticalSpeed : undefined,
+    track: Number.isFinite(track) ? track : undefined,
+  });
 
   return NextResponse.json(
     {
