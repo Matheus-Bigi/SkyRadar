@@ -65,6 +65,7 @@ export async function GET(req: NextRequest) {
             type: x.aircraft.aircraftType ?? null,
             model: x.aircraft.aircraftModel ?? null,
             operator: x.aircraft.operator ?? null,
+            airline: x.aircraft.airline ?? null,
             category: x.aircraft.category,
             altitudeFt: x.aircraft.altitude ?? null,
             groundSpeedKt: x.aircraft.groundSpeed ?? null,

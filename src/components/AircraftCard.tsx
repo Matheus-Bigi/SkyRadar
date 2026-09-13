@@ -16,6 +16,7 @@ import {
 } from "../lib/format";
 import SilhouetteIcon from "./SilhouetteIcon";
 import { useAircraftPhoto } from "../hooks/useAircraftPhoto";
+import { useAircraftRoute } from "../hooks/useAircraftRoute";
 
 export interface AircraftCardProps {
   aircraft: Aircraft;
@@ -38,8 +39,30 @@ function Field({ label, value, secondary }: { label: string; value: string | nul
 }
 
 export default function AircraftCard({ aircraft, geometry, expanded, onToggleExpand, onClose, onLookHere }: AircraftCardProps) {
-  const photo = useAircraftPhoto(aircraft.registration, expanded);
+  // Both lookups start as soon as the card opens — not on expand — so the
+  // photo and route are already there by the time anyone taps MORE. Each is
+  // keyed on this aircraft's own identity and clears when the selection
+  // changes, so one aircraft's details can never linger over another's.
+  const photo = useAircraftPhoto(aircraft.id, aircraft.registration);
+  const route = useAircraftRoute(aircraft.callsign, aircraft.latitude, aircraft.longitude);
   const isMilitary = aircraft.isMilitary;
+
+  // The route database names the operating carrier; the callsign's ICAO
+  // designator is the offline fallback. Both are published facts about this
+  // flight — nothing is inferred from the aircraft's appearance or owner.
+  const airline = route.airline ?? aircraft.airline ?? null;
+  const routeLine =
+    route.origin && route.destination
+      ? `${route.origin} → ${route.destination}`
+      : route.origin
+        ? `FROM ${route.origin}`
+        : route.destination
+          ? `TO ${route.destination}`
+          : null;
+  const routeNames =
+    route.originName && route.destinationName
+      ? `${route.originName} → ${route.destinationName}`
+      : route.originName ?? route.destinationName ?? null;
 
   return (
     <div
@@ -62,16 +85,33 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
               </span>
             )}
           </div>
+          {airline && <div className="truncate text-xs text-radar-text">{airline}</div>}
           {aircraft.aircraftModel && (
-            <div className="truncate text-xs text-radar-textdim">{aircraft.aircraftModel}</div>
+            <div className="truncate text-[11px] leading-tight text-radar-textdim">{aircraft.aircraftModel}</div>
           )}
-          <div className="mt-0.5 font-mono text-[9px] tracking-widest text-radar-textdim">
-            {categoryLabel(aircraft.category)}
+          <div className="mt-0.5 flex items-center gap-2">
+            {routeLine && (
+              <span className="truncate font-mono text-[10px] tracking-wider text-radar-green">{routeLine}</span>
+            )}
+            <span className="font-mono text-[9px] tracking-widest text-radar-textdim">
+              {categoryLabel(aircraft.category)}
+            </span>
           </div>
         </div>
-        <button onClick={onClose} aria-label="Close" className="text-radar-textdim hover:text-radar-text">
-          ✕
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <button onClick={onClose} aria-label="Close" className="text-radar-textdim hover:text-radar-text">
+            ✕
+          </button>
+          {photo.imageUrl && (
+            // A photo of this exact airframe, not a stock shot of the type.
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={photo.imageUrl}
+              alt={`${aircraft.registration ?? aircraft.aircraftModel ?? "Aircraft"} photo`}
+              className="h-11 w-16 rounded border border-radar-panelborder object-cover"
+            />
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-2 px-3 pb-3">
@@ -114,19 +154,17 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
               <Field label="Model" value={aircraft.aircraftModel ?? null} />
               <Field label="Type" value={aircraft.aircraftType ?? null} />
               <Field label="Registration" value={aircraft.registration ?? null} />
-              <Field label="Operator" value={aircraft.operator ?? null} />
+              <Field label="Owner/Operator" value={aircraft.operator ?? null} />
             </div>
           </div>
 
-          {(aircraft.flightNumber || aircraft.origin || aircraft.destination) && (
+          {(aircraft.flightNumber || airline || routeLine) && (
             <div className="mb-3">
               <div className="mb-1 font-mono text-[10px] tracking-widest text-radar-textdim">FLIGHT</div>
               <div className="grid grid-cols-2 gap-2">
+                <Field label="Airline" value={airline} />
                 <Field label="Flight #" value={aircraft.flightNumber ?? null} />
-                <Field
-                  label="Route"
-                  value={aircraft.origin && aircraft.destination ? `${aircraft.origin} → ${aircraft.destination}` : null}
-                />
+                <Field label="Route" value={routeLine} secondary={routeNames} />
               </div>
             </div>
           )}
@@ -148,7 +186,7 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
           <div>
             <div className="mb-1 font-mono text-[10px] tracking-widest text-radar-textdim">IDENTIFICATION</div>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Airline" value={aircraft.airline ?? null} />
+              <Field label="ICAO address" value={aircraft.id.toUpperCase()} />
               <Field label="Category" value={categoryLabel(aircraft.category)} />
               <Field label="Military/Gov" value={isMilitary ? "Yes" : null} />
             </div>
