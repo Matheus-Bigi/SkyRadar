@@ -169,6 +169,22 @@ carries no city/neighbourhood/road layers of its own — and no overlays at
 all. Airports are drawn by the radar canvas instead (see below), which can
 label them; a raster style ships no glyphs to render text with.
 
+### Keeping the overlay glued to the map
+
+Anything with a real position — aircraft, airports, the range rings — is
+placed through `map.project()` whenever a map exists, so it cannot drift
+away from the ground feature it sits over. The polar bearing/distance plot
+remains only for when there is no map at all; `map.project()` is camera
+arithmetic and needs no tiles, so this stays independent of tile servers.
+
+Drawing a polar plot *alongside* a Mercator map means trusting two
+independent scale calculations to agree, and they didn't: the camera zoom
+was derived with the 256px-tile constant (156543.0) while MapLibre lays the
+world out on 512px tiles (78271.5). That put the map a full zoom level too
+close, so every overlay landed at half its true distance from centre — the
+error growing with distance, which is why the centred "you are here" marker
+looked perfect while the airports were miles out.
+
 ## Compass
 
 Phone and tablet magnetometers drift, and cases, speakers and car dashboards

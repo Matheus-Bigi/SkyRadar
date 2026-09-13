@@ -24,7 +24,18 @@ import { RangeMiles } from "../store/useRadarStore";
 
 const BASEMAP_SOURCE_ID = "skyradar-basemap";
 const BASEMAP_LAYER_ID = "skyradar-basemap-layer";
-const EARTH_CIRCUMFERENCE_PX_AT_Z0 = 156543.03392;
+/**
+ * Metres per pixel at zoom 0 on the equator.
+ *
+ * MapLibre lays the world out on 512px tiles, so one of its zoom levels
+ * covers half the ground that the 256px scheme (Leaflet, Google, and most
+ * formulas you'll find written down) does at the same number — hence
+ * 78271.5, not the widely-quoted 156543.0. Using the 256px figure put the
+ * camera a full zoom level too close, so the map showed half the ground the
+ * radar rings claimed and every overlay landed at half its true distance
+ * from the centre.
+ */
+const METERS_PER_PIXEL_AT_Z0 = 78271.51696;
 /** How long a basemap gets to deliver its first tile before we try the next. */
 const FIRST_TILE_TIMEOUT_MS = 9000;
 /** Tile errors tolerated before giving up on a basemap that has shown nothing. */
@@ -117,7 +128,7 @@ function buildStyle(basemap: Basemap): StyleSpecification {
 function computeZoom(latitude: number, radiusMeters: number, desiredRadiusPx: number): number {
   const latRad = (latitude * Math.PI) / 180;
   const metersPerPx = radiusMeters / desiredRadiusPx;
-  const zoom = Math.log2((EARTH_CIRCUMFERENCE_PX_AT_Z0 * Math.cos(latRad)) / metersPerPx);
+  const zoom = Math.log2((METERS_PER_PIXEL_AT_Z0 * Math.cos(latRad)) / metersPerPx);
   return Math.max(2, Math.min(18, zoom));
 }
 
