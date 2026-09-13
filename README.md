@@ -148,6 +148,25 @@ If a real provider's request fails (rate-limited, network error, etc.),
 `/api/aircraft` returns an error and the app shows a "LIVE DATA UNAVAILABLE"
 status — it never silently substitutes fake aircraft.
 
+## The basemap
+
+The background map is deliberately **raster**, not vector, and its style is
+defined inline in `MapView.tsx` rather than fetched. A vector style has to
+pull a style document, then glyphs, then sprites, then render dozens of
+layers — every one of those a way to end up staring at a black screen.
+Raster tiles are just images: they either arrive and you see a map, or they
+don't and the app says so.
+
+Three sources are tried in order — CARTO Dark Matter, Esri Dark Gray, then
+OpenStreetMap (dimmed, since it's a light basemap) — advancing when a
+basemap produces no tile within a few seconds or errors repeatedly. A tile
+actually arriving is the only thing treated as proof the map works.
+
+Place names, roads and landmarks come baked into the tiles, so SkyRadar
+carries no city/neighbourhood/road layers of its own. Its only overlay is a
+dot per nearby airport, drawn as circles rather than labelled symbols
+because a raster style ships no glyphs to render text with.
+
 ## Design language
 
 Dark, desaturated map; restrained radar green; clean vector aircraft

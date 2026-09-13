@@ -10,9 +10,6 @@ export interface Preferences {
   radarGraphicsEnabled: boolean;
   aircraftTrailsEnabled: boolean;
   airportsEnabled: boolean;
-  citiesEnabled: boolean;
-  neighborhoodsEnabled: boolean;
-  roadsEnabled: boolean;
   skyViewEnabled: boolean;
   radarSoundEnabled: boolean;
 
@@ -38,9 +35,6 @@ const defaults: Preferences = {
   radarGraphicsEnabled: true,
   aircraftTrailsEnabled: true,
   airportsEnabled: true,
-  citiesEnabled: true,
-  neighborhoodsEnabled: true,
-  roadsEnabled: true,
   skyViewEnabled: true,
   radarSoundEnabled: false,
 
