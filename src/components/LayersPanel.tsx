@@ -19,9 +19,11 @@ const LAYER_ITEMS: { key: BooleanPrefKey; label: string }[] = [
 export default function LayersPanel({ onClose }: { onClose: () => void }) {
   const prefs = usePreferencesStore();
 
+  // Anchored to the viewport rather than to the LAYERS button: the button
+  // lives in a scrollable rail, which would clip a panel positioned inside it.
   return (
     <div
-      className="animate-card-in absolute bottom-full right-0 mb-2 w-56 rounded-xl border border-radar-panelborder bg-radar-panel/95 p-3 shadow-2xl backdrop-blur-md"
+      className="animate-card-in absolute bottom-3 right-28 z-30 w-56 rounded-xl border border-radar-panelborder bg-radar-panel/95 p-3 shadow-2xl backdrop-blur-md"
       role="dialog"
       aria-label="Layers"
     >

@@ -19,14 +19,14 @@ export default function CategoryFilterBar({
   onChange: (f: CategoryFilter) => void;
 }) {
   return (
-    <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-lg border border-radar-panelborder bg-radar-panel/80 p-1 backdrop-blur-sm">
+    <div className="flex w-full flex-col gap-1 rounded-lg border border-radar-panelborder bg-radar-panel/80 p-1 backdrop-blur-sm">
       {FILTERS.map((f) => (
         <button
           key={f.value}
           onClick={() => onChange(f.value)}
           aria-pressed={value === f.value}
           className={clsx(
-            "whitespace-nowrap rounded-md px-2.5 py-1 font-mono text-[10px] tracking-wide transition-colors",
+            "whitespace-nowrap rounded-md px-2 py-1 font-mono text-[10px] tracking-wide transition-colors",
             value === f.value ? "bg-radar-greendim text-radar-green" : "text-radar-textdim hover:text-radar-text"
           )}
         >
