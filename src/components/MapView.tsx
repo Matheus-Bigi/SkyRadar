@@ -230,8 +230,10 @@ export default function MapView({ center, rangeMiles, lockCenter, headingUpMode,
           aria-hidden="true"
         />
       </div>
+      {/* Kept clear of the right-hand control stack (compass / orientation /
+          lock), which this used to sit on top of and hide. */}
       {mapError && (
-        <div className="pointer-events-none absolute inset-x-3 top-24 z-10 rounded-md border border-radar-panelborder bg-radar-panel/85 px-3 py-1.5 text-center font-mono text-[9px] leading-tight text-radar-textdim backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-3 right-24 top-32 z-10 rounded-md border border-radar-panelborder bg-radar-panel/85 px-3 py-1.5 text-center font-mono text-[9px] leading-tight text-radar-textdim backdrop-blur-sm">
           {mapError}
         </div>
       )}

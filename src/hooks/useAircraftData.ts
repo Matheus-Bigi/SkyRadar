@@ -18,8 +18,15 @@ export function useAircraftData(position: LatLon | null, rangeMiles: number) {
   const setStatus = useAircraftStore((s) => s.setStatus);
   const failuresRef = useRef(0);
 
+  // Snap to ~110m before this drives any fetching. `watchPosition` reports
+  // constant small GPS jitter, and keying the poll loop off raw coordinates
+  // tore it down and restarted it on every wobble — a request storm against
+  // rate-limited feeds. This precision is far finer than a 3-30 mile radar.
+  const lat = position ? Math.round(position.latitude * 1000) / 1000 : null;
+  const lon = position ? Math.round(position.longitude * 1000) / 1000 : null;
+
   useEffect(() => {
-    if (!position) {
+    if (lat === null || lon === null) {
       setStatus("idle");
       return;
     }
@@ -30,24 +37,27 @@ export function useAircraftData(position: LatLon | null, rangeMiles: number) {
     const poll = async () => {
       try {
         const params = new URLSearchParams({
-          lat: position.latitude.toFixed(5),
-          lon: position.longitude.toFixed(5),
+          lat: lat.toFixed(5),
+          lon: lon.toFixed(5),
           rangeMiles: String(rangeMiles),
         });
         const res = await fetch(`/api/aircraft?${params.toString()}`, {
           cache: "no-store",
         });
-        if (!res.ok) throw new Error(`status ${res.status}`);
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+          throw new Error(body?.detail || `status ${res.status}`);
+        }
         const data = (await res.json()) as { aircraft: unknown; source: string };
         if (cancelled) return;
         failuresRef.current = 0;
         applySnapshot(data.aircraft as never, data.source);
-      } catch {
+      } catch (err) {
         if (cancelled) return;
         failuresRef.current += 1;
         setStatus(
           failuresRef.current >= OFFLINE_AFTER_FAILURES ? "offline" : "error",
-          "Aircraft data temporarily unavailable"
+          err instanceof Error ? err.message : "Aircraft data temporarily unavailable"
         );
       } finally {
         if (!cancelled) timer = setTimeout(poll, POLL_INTERVAL_MS);
@@ -61,5 +71,5 @@ export function useAircraftData(position: LatLon | null, rangeMiles: number) {
       if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position?.latitude, position?.longitude, rangeMiles]);
+  }, [lat, lon, rangeMiles]);
 }

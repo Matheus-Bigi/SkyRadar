@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAircraftProvider } from "@/lib/aircraft/providers";
+import { errorText } from "@/lib/aircraft/providers/failover";
 import { milesToMeters } from "@/lib/geo";
 
 export const dynamic = "force-dynamic";
@@ -44,8 +45,10 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[api/aircraft] provider error", err);
+    // Pass the real reason through — a vague "unavailable" makes a live
+    // outage indistinguishable from a bug when debugging on a real device.
     return NextResponse.json(
-      { error: "Aircraft data temporarily unavailable" },
+      { error: "Aircraft data temporarily unavailable", detail: errorText(err) },
       { status: 502 }
     );
   }

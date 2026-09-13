@@ -51,8 +51,10 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
         <SilhouetteIcon type={aircraft.silhouette} military={isMilitary} size={34} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
+            {/* Falls back to the ICAO 24-bit address — always broadcast, always
+                real — rather than an unhelpful "UNKNOWN". */}
             <span className="truncate font-mono text-sm font-semibold text-radar-text">
-              {aircraft.callsign ?? aircraft.registration ?? "UNKNOWN"}
+              {aircraft.callsign ?? aircraft.registration ?? aircraft.id.toUpperCase()}
             </span>
             {isMilitary && (
               <span className="rounded border border-radar-mil/40 px-1 py-0.5 font-mono text-[8px] tracking-widest text-radar-mil">

@@ -144,7 +144,11 @@ export default function SkyRadarApp() {
       {aircraftStore.status === "ready" && visibleAircraftCount === 0 && !selection.selectedAircraftId && (
         <EmptyState rangeMiles={radar.rangeMiles} />
       )}
-      <DataStatusBanner status={aircraftStore.status} source={aircraftStore.source} />
+      <DataStatusBanner
+        status={aircraftStore.status}
+        source={aircraftStore.source}
+        error={aircraftStore.error}
+      />
 
       <div
         className={clsx(
@@ -159,7 +163,7 @@ export default function SkyRadarApp() {
 
       <div
         className={clsx(
-          "absolute right-3 top-16 flex flex-col items-end gap-2 transition-opacity duration-700",
+          "absolute right-3 top-16 z-20 flex flex-col items-end gap-2 transition-opacity duration-700",
           ambient.ambient ? "opacity-50" : "opacity-100"
         )}
       >

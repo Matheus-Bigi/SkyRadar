@@ -16,6 +16,12 @@ export interface ClassificationHints {
   registration?: string;
   /** Some data sources flag this explicitly (e.g. ADS-B military hex ranges). */
   providerFlaggedMilitary?: boolean;
+  /**
+   * ADS-B emitter category as broadcast by the aircraft itself (e.g. "A7" =
+   * rotorcraft, "A5" = heavy). Real telemetry, and often the only size/shape
+   * hint available when a feed doesn't resolve the ICAO type designator.
+   */
+  emitterCategory?: string;
 }
 
 export interface Classification {
@@ -350,6 +356,26 @@ export function classifyAircraft(hints: ClassificationHints): Classification {
   const modelText = (hints.aircraftModel ?? "").toLowerCase();
   if (/helicopter|heli\b/.test(modelText)) {
     return { category: "HELICOPTER", silhouette: "HELICOPTER", isMilitary: false };
+  }
+
+  // Still unknown: use the aircraft's own broadcast emitter category. This is
+  // real ADS-B telemetry, not a guess about the airframe — it only tells us
+  // rough size/class, which is exactly what picking a silhouette needs.
+  switch (hints.emitterCategory?.trim().toUpperCase()) {
+    case "A7":
+      return { category: "HELICOPTER", silhouette: "HELICOPTER", isMilitary: false };
+    case "A1":
+      return { category: "GENERAL_AVIATION", silhouette: "GENERAL_AVIATION", isMilitary: false };
+    case "A2":
+      return { category: "GENERAL_AVIATION", silhouette: "REGIONAL_JET", isMilitary: false };
+    case "A3":
+    case "A4":
+    case "A5":
+      return { category: "AIRLINE", silhouette: "JET_AIRLINER", isMilitary: false };
+    case "A6":
+      return { category: "MILITARY", silhouette: "FIGHTER", isMilitary: true };
+    default:
+      break;
   }
 
   return { category: "OTHER", silhouette: "OTHER", isMilitary: false };

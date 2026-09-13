@@ -6,6 +6,7 @@ import {
   AircraftQuery,
 } from "../types";
 import { metersToFeet, mpsToKnots } from "../../geo";
+import { withDeadline } from "./adsb";
 
 /**
  * Live provider backed by the free OpenSky Network REST API
@@ -49,8 +50,7 @@ export class OpenSkyProvider implements AircraftDataProvider {
       `${this.baseUrl}/states/all?lamin=${bounds.latMin}&lomin=${bounds.lonMin}` +
       `&lamax=${bounds.latMax}&lomax=${bounds.lonMax}`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const deadline = withDeadline(4000, query.signal);
 
     try {
       const headers: Record<string, string> = { Accept: "application/json" };
@@ -60,7 +60,7 @@ export class OpenSkyProvider implements AircraftDataProvider {
       }
 
       const res = await fetch(url, {
-        signal: controller.signal,
+        signal: deadline.signal,
         headers,
         // Live radar data — never let a CDN/browser cache serve stale flights;
         // our own short-lived cache above is the only staleness we allow.
@@ -68,7 +68,7 @@ export class OpenSkyProvider implements AircraftDataProvider {
       });
 
       if (!res.ok) {
-        throw new Error(`OpenSky API error ${res.status}`);
+        throw new Error(`HTTP ${res.status}`);
       }
 
       const body = (await res.json()) as { states?: unknown[][] | null };
@@ -82,7 +82,7 @@ export class OpenSkyProvider implements AircraftDataProvider {
       cache.set(key, { aircraft, fetchedAt });
       return { aircraft, source: this.name, fetchedAt };
     } finally {
-      clearTimeout(timeout);
+      deadline.cleanup();
     }
   }
 }

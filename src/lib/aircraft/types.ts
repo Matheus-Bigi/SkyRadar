@@ -64,6 +64,11 @@ export interface AircraftQuery {
   centerLatitude: number;
   centerLongitude: number;
   radiusMeters: number;
+  /**
+   * Optional cancellation shared across a failover chain, so trying several
+   * providers in turn still fits inside one serverless request budget.
+   */
+  signal?: AbortSignal;
 }
 
 export interface AircraftProviderResult {
