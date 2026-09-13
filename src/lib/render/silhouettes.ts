@@ -9,10 +9,14 @@ import { SilhouetteType } from "../aircraft/types";
  * reading as an abstract blob at small sizes (spec #10).
  *
  * Each source image (public/aircraft/*.png) is a white silhouette on a
- * transparent background, nose pointing up. At draw time it's tinted to
- * whatever fill/stroke color the category (or selection/military state)
- * calls for via canvas `source-in` compositing, so one asset per shape
- * serves every color state.
+ * transparent background, nose pointing up. Tinting it to whatever
+ * fill/stroke color a category, selection, or military-highlight state
+ * calls for happens ONCE per (shape, color) pair on a small offscreen
+ * canvas via `source-in` compositing, and the result is cached — flipping
+ * `globalCompositeOperation` on the live, continuously-redrawn radar
+ * canvas dozens of times a frame corrupts unrelated drawing later in that
+ * same frame (rings/other aircraft silently stop appearing), so the
+ * compositing trick is confined to a disposable canvas instead.
  */
 
 export interface SilhouetteStyle {
@@ -35,6 +39,7 @@ const IMAGE_FILES: Record<SilhouetteType, string> = {
 
 const imageCache = new Map<string, HTMLImageElement>();
 const loadListeners = new Map<string, Set<() => void>>();
+const tintedCache = new Map<string, HTMLCanvasElement>();
 
 function getImage(type: SilhouetteType): HTMLImageElement | null {
   if (typeof window === "undefined") return null;
@@ -64,13 +69,23 @@ export function onSilhouetteReady(type: SilhouetteType, cb: () => void): () => v
   return () => loadListeners.get(file)?.delete(cb);
 }
 
-/** Draws `img` (already positioned via the caller's transform) tinted to a solid color. */
-function drawTinted(ctx: CanvasRenderingContext2D, img: HTMLImageElement, color: string) {
-  ctx.drawImage(img, -1, -1, 2, 2);
-  ctx.globalCompositeOperation = "source-in";
-  ctx.fillStyle = color;
-  ctx.fillRect(-1, -1, 2, 2);
-  ctx.globalCompositeOperation = "source-over";
+/** Bakes `img` tinted to `color` onto a small cached offscreen canvas, computed once per pair. */
+function getTinted(img: HTMLImageElement, color: string): HTMLCanvasElement {
+  const key = `${img.src}|${color}`;
+  let canvas = tintedCache.get(key);
+  if (canvas) return canvas;
+
+  canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const offscreen = canvas.getContext("2d")!;
+  offscreen.drawImage(img, 0, 0);
+  offscreen.globalCompositeOperation = "source-in";
+  offscreen.fillStyle = color;
+  offscreen.fillRect(0, 0, canvas.width, canvas.height);
+
+  tintedCache.set(key, canvas);
+  return canvas;
 }
 
 export function drawSilhouette(
@@ -94,10 +109,10 @@ export function drawSilhouette(
     ctx.save();
     const growth = 1 + style.lineWidth * 0.07;
     ctx.scale(growth, growth);
-    drawTinted(ctx, img, style.stroke);
+    ctx.drawImage(getTinted(img, style.stroke), -1, -1, 2, 2);
     ctx.restore();
   }
-  drawTinted(ctx, img, style.fill);
+  ctx.drawImage(getTinted(img, style.fill), -1, -1, 2, 2);
 
   ctx.restore();
 }
