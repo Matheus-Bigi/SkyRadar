@@ -214,3 +214,44 @@ export function interpolateAngle(a: number, b: number, t: number): number {
   const diff = normalizeSignedDegrees(b - a);
   return normalizeDegrees(a + diff * t);
 }
+
+/**
+ * How far a point lies to the side of the great-circle path from `start` to
+ * `end`, in meters. Signed: negative is left of the path, positive right.
+ *
+ * This is what lets SkyRadar check a claimed flight route against where the
+ * aircraft actually is. A route database keyed only on callsign can hand
+ * back a stale or simply wrong leg, and the only way to tell is geometry:
+ * an aircraft over Portland is not flying Seattle→Denver, whatever the
+ * database says.
+ */
+export function crossTrackDistanceMeters(point: LatLon, start: LatLon, end: LatLon): number {
+  const d13 = distanceMeters(start, point) / EARTH_RADIUS_M;
+  const theta13 = toRad(bearingDegrees(start, point));
+  const theta12 = toRad(bearingDegrees(start, end));
+  return Math.asin(Math.sin(d13) * Math.sin(theta13 - theta12)) * EARTH_RADIUS_M;
+}
+
+/**
+ * How far along the `start`→`end` path a point sits, in meters. Negative
+ * means it hasn't reached `start` yet; greater than the path length means it
+ * has passed `end`.
+ */
+export function alongTrackDistanceMeters(point: LatLon, start: LatLon, end: LatLon): number {
+  const d13 = distanceMeters(start, point) / EARTH_RADIUS_M;
+  const xt = crossTrackDistanceMeters(point, start, end) / EARTH_RADIUS_M;
+  // Guard the domain: floating point can push the ratio a hair past ±1 when
+  // the point sits essentially on top of `start`.
+  const ratio = Math.cos(d13) / Math.cos(xt);
+  const magnitude = Math.acos(Math.max(-1, Math.min(1, ratio))) * EARTH_RADIUS_M;
+
+  // acos only ever yields a magnitude, so it cannot say "behind the start" —
+  // and that is precisely the case worth catching: an aircraft over Portland
+  // is *before* Seattle on a Seattle→Denver path, not 37km along it. The
+  // bearing spread settles the sign: more than a right angle off the path's
+  // initial heading means the point is behind the start.
+  const spread = normalizeSignedDegrees(
+    bearingDegrees(start, point) - bearingDegrees(start, end)
+  );
+  return Math.abs(spread) > 90 ? -magnitude : magnitude;
+}

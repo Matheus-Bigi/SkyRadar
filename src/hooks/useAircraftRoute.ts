@@ -11,6 +11,8 @@ export interface RouteResult {
   /** Operator name, when the route database identifies it. */
   airline: string | null;
   loading: boolean;
+  /** A lookup ran and no route could be confirmed for this flight. */
+  unconfirmed: boolean;
 }
 
 const EMPTY: RouteResult = {
@@ -20,6 +22,7 @@ const EMPTY: RouteResult = {
   destinationName: null,
   airline: null,
   loading: false,
+  unconfirmed: false,
 };
 
 /**
@@ -67,10 +70,11 @@ export function useAircraftRoute(
           destinationName: data.destinationName ?? null,
           airline: data.airline ?? null,
           loading: false,
+          unconfirmed: !data.origin && !data.destination,
         });
       })
       .catch(() => {
-        if (!cancelled) setState(EMPTY);
+        if (!cancelled) setState({ ...EMPTY, unconfirmed: true });
       });
 
     return () => {

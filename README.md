@@ -65,6 +65,14 @@ LayerManager /
 SettingsManager       → src/store/usePreferencesStore.ts (persisted)
 ```
 
+**Range rings.** The scope draws three rings, at a third, two thirds and
+all of the selected range. Thirds rather than quarters because every range
+SkyRadar offers divides cleanly by three — 1/2/3, 3/6/9, 5/10/15, 10/20/30
+miles — so each ring carries a distance you can read at a glance instead of
+"6.75 MI". The labels sit just inside their own ring at a fixed screen
+angle, tilted off vertical to clear the "N" marker, so they stay upright and
+in place whether the plot is north-up or turning with the device.
+
 **Rendering model.** The geographic map (MapLibre GL, a free CARTO Dark
 Matter vector style — no API key needed) is the base layer. A single
 `<canvas>` sits on top of it and draws everything else — radar rings, the
@@ -121,6 +129,18 @@ Aircraft whose position is over a minute stale, that are on the ground, or
 that report no position at all are dropped: a real aircraft plotted where it
 no longer is would still be a lie.
 
+### Debugging a missing photo or route
+
+Both lookups fail silently by design — a card showing nothing is the right
+outcome when nothing real is available — which makes "no photo exists" and
+"the lookup timed out" look identical from the outside. The card itself now
+distinguishes them (*no photo on file* vs. a retry button), and
+**`/api/aircraft/details-diagnostics?hex=&registration=&callsign=&lat=&lon=`**
+shows the whole picture: what Planespotters, adsb.lol and adsbdb each said,
+how long they took, and — for every route candidate — the measured detour
+and corridor distances behind its accept or reject. It bypasses every cache,
+so it reports what those services are doing right now.
+
 ### Debugging live data
 
 Open **`/api/aircraft/diagnostics?lat=<lat>&lon=<lon>&rangeMiles=15`** in a
@@ -168,13 +188,40 @@ couldn't name got no photo at all.
 **The route** (`/api/aircraft/flightroute`) has to be looked up, because
 ADS-B doesn't carry one — an aircraft broadcasts its identity, position and
 movement, and nothing about its schedule. Two free, keyless databases are
-tried: adsb.lol's `routeset` (which takes the aircraft's current position
-and reports whether the route it found is *plausible* for where the
-aircraft actually is — the closest thing to verification available), then
-adsbdb. "Unknown", an implausible match, or a failed lookup all show
-nothing. Only airline flight IDs are looked up at all; a tail number has no
-published route, so asking would just spend a volunteer database's quota on
-a guaranteed miss.
+tried: adsb.lol's `routeset` (the endpoint tar1090 uses), then adsbdb. Only
+airline flight IDs are looked up at all; a tail number has no published
+route, so asking would just spend a volunteer database's quota on a
+guaranteed miss.
+
+### Checking a route against the aircraft
+
+These databases are keyed on callsign alone, and callsigns are reused —
+across days, and across entirely different legs — so a lookup can answer
+confidently with a route the aircraft is demonstrably not flying. This is
+not hypothetical: ASA642 over Portland, climbing east, came back as
+Seattle→Denver while it was really flying Portland→Newark.
+
+Geometry settles it, and every candidate is checked before it can reach the
+card:
+
+- **Detour** — how much further the aircraft would have to fly, going via
+  where it actually is, than the direct origin→destination distance. This is
+  the primary test, because it separates cleanly: a genuine Seattle→LA
+  overflight of Portland costs 17km of detour and a real westward weather
+  deviation 52km, while that bogus Seattle→Denver leg costs 118km. Flying
+  backwards adds detour too, so "behind the origin" and "past the
+  destination" fall out for free. The limit is 80km.
+- **Corridor** — distance to the side of the direct path, capped at 150km.
+  A backstop for the one case detour is blind to: on a very long leg, a big
+  perpendicular offset barely lengthens the journey at all (200km off the
+  middle of a transpacific route adds about 10km).
+
+Both limits are fixed distances, never a fraction of route length — scaling
+them would widen the corridor exactly as the bogus route got longer. A
+candidate that fails is discarded and the next source tried; if none
+survives, the card says *no confirmed route* rather than showing a
+plausible-looking lie. A source that doesn't supply airport coordinates
+can't be checked, so it isn't used.
 
 **The airline name** comes from the callsign. An airliner's ADS-B callsign
 *is* its operator's registered ICAO designator plus a flight number — DAL2411

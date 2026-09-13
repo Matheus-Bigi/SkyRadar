@@ -5,6 +5,8 @@ export const THEME = {
   radarGreenFaint: "rgba(51,255,153,0.14)",
   ring: "rgba(51,255,153,0.22)",
   ringStrong: "rgba(51,255,153,0.4)",
+  /** Range-ring distance labels: a scale to consult, not something to read first. */
+  ringLabel: "rgba(126,178,158,0.75)",
   sweepCore: "rgba(180,255,220,0.9)",
   aircraft: "#e7f3ef",
   aircraftStroke: "#8fada4",
