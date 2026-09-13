@@ -37,6 +37,7 @@ export interface RadarCanvasProps {
   categoryFilter: CategoryFilter;
   selectedAircraftId: string | null;
   lockCenter: boolean;
+  placeName: string | null;
   prefs: RadarCanvasPrefs;
   onSelect: (id: string | null) => void;
   onOverlapChoices: (ids: string[]) => void;
@@ -121,7 +122,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
     const render = (time: number) => {
       rafId = requestAnimationFrame(render);
       const canvas = canvasRef.current;
-      const { map, userPosition, userAltitudeMeters, userHeading, mode, rangeMiles, categoryFilter, selectedAircraftId, lockCenter, prefs } =
+      const { map, userPosition, userAltitudeMeters, userHeading, mode, rangeMiles, categoryFilter, selectedAircraftId, lockCenter, placeName, prefs } =
         latestRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -265,7 +266,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
 
       // User marker always drawn last within the base layer so it never
       // gets visually buried under aircraft symbology.
-      drawUserMarker(ctx, centerPt.x, centerPt.y, mode === "RADAR");
+      drawUserMarker(ctx, centerPt.x, centerPt.y, mode === "RADAR", placeName);
     };
 
     rafId = requestAnimationFrame(render);
@@ -370,7 +371,13 @@ function drawTrail(ctx: CanvasRenderingContext2D, points: { x: number; y: number
   ctx.restore();
 }
 
-function drawUserMarker(ctx: CanvasRenderingContext2D, x: number, y: number, radarMode: boolean) {
+function drawUserMarker(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radarMode: boolean,
+  placeName: string | null
+) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, radarMode ? 8 : 6, 0, Math.PI * 2);
@@ -386,6 +393,18 @@ function drawUserMarker(ctx: CanvasRenderingContext2D, x: number, y: number, rad
   ctx.shadowBlur = 8;
   ctx.fill();
   ctx.restore();
+
+  // Small "you are here" place name — confirms SkyRadar has your actual
+  // location even when the map's own background tiles aren't visible.
+  if (placeName) {
+    ctx.save();
+    ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
+    ctx.fillStyle = THEME.labelDim;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(placeName.toUpperCase(), x, y + (radarMode ? 8 : 6) + 6);
+    ctx.restore();
+  }
 }
 
 interface MarkerDrawOptions {
