@@ -94,7 +94,8 @@ Planespotters.net API by registration.
 ```
 AircraftDataProvider (src/lib/aircraft/types.ts)
     ├── Flightradar24Provider   — real FR24 API (paid), server-side only
-    ├── OpenSkyProvider         — real OpenSky Network API (free, default)
+    ├── AdsbAggregatorProvider  — adsb.lol / airplanes.live / adsb.fi (free, keyless)
+    ├── OpenSkyProvider         — real OpenSky Network API (free, last resort)
     └── MockAircraftProvider    — local fake-traffic simulator (dev-only opt-in)
 ```
 
@@ -102,14 +103,31 @@ AircraftDataProvider (src/lib/aircraft/types.ts)
 real and at your real location.** The simulator exists purely for local
 development and is never selected automatically — see below.
 
-By default (no configuration needed) SkyRadar uses **OpenSky Network**
-(`opensky.ts`) — a free, keyless, real ADS-B data source. Anonymous access
-is rate-limited, so a short server-side cache keeps outbound requests
-well-spaced regardless of how often the client polls; set
-`OPENSKY_USERNAME`/`OPENSKY_PASSWORD` (a free OpenSky account) for a higher
-quota. OpenSky's free tier only reports position/callsign/speed/altitude/
-heading — not registration, aircraft type, model, or operator, so those
-fields are simply hidden in the UI rather than guessed.
+With no configuration at all, `/api/aircraft` runs a **failover chain** of
+real sources (`failover.ts`) and returns the first that answers, sharing one
+request deadline so several attempts still fit inside a serverless budget.
+The keyless community ADS-B aggregators come first: they need no account,
+answer a radius query directly, and report the most real detail —
+registration, ICAO type, model, owner/operator, and a military flag, all
+straight off the aircraft's own transmissions, already in feet and knots.
+
+OpenSky trails them because its anonymous tier quotas by source IP, which a
+shared serverless address tends to exhaust (setting
+`OPENSKY_USERNAME`/`OPENSKY_PASSWORD` raises that quota). Its free tier also
+reports only position/callsign/speed/altitude/heading — no registration,
+type, model, or operator — so those fields are hidden rather than guessed.
+
+Aircraft whose position is over a minute stale, that are on the ground, or
+that report no position at all are dropped: a real aircraft plotted where it
+no longer is would still be a lie.
+
+### Debugging live data
+
+Open **`/api/aircraft/diagnostics?lat=<lat>&lon=<lon>&rangeMiles=15`** in a
+browser to see what every source is doing right now — which answered, how
+fast, what each failed with, how many aircraft came back, and the five
+nearest with their real details. When the radar says "LIVE DATA
+UNAVAILABLE", the banner also names the provider and its error directly.
 
 Set `FR24_API_KEY` (and optionally `FR24_API_BASE_URL`) in `.env.local` to
 use the real Flightradar24 API instead (richer metadata, but a paid plan)

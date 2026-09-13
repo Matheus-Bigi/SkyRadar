@@ -539,13 +539,18 @@ function drawAircraftMarker(
     ctx.fill();
   }
 
-  if (opts.showLabel && a.callsign) {
+  // Not every aircraft broadcasts a callsign. Its ICAO 24-bit address always
+  // identifies it though, and it's real, so fall back to that rather than
+  // leaving a nameless dot on the scope.
+  const identity = a.callsign ?? a.registration ?? a.id.toUpperCase();
+
+  if (opts.showLabel && identity) {
     // Second line — altitude + speed — gives the "who is this and how fast/
     // high are they" answer right on the plot, without needing to tap in.
     const detailLine = [fmtAltitude(a.altitude), fmtSpeed(a.groundSpeed)].filter(Boolean).join("  ");
 
     ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
-    const line1Width = ctx.measureText(a.callsign).width;
+    const line1Width = ctx.measureText(identity).width;
     let line2Width = 0;
     if (detailLine) {
       ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
@@ -569,7 +574,7 @@ function drawAircraftMarker(
         ctx.textBaseline = "top";
         ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
         ctx.fillStyle = opts.selected ? THEME.selected : THEME.label;
-        ctx.fillText(a.callsign, c.x, c.y);
+        ctx.fillText(identity, c.x, c.y);
         if (detailLine) {
           ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
           ctx.fillStyle = THEME.labelDim;
