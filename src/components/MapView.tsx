@@ -11,11 +11,14 @@ import { RangeMiles } from "../store/useRadarStore";
 
 // Two independent, keyless vector-tile providers: if the primary is slow,
 // blocked, or down, we fall back automatically rather than leaving the
-// radar without any geographic backdrop at all.
+// radar without any geographic backdrop at all. The fallback is a light
+// style (no free dark alternative from this provider), so it gets a CSS
+// filter to invert it toward our dark aesthetic when it's the one in use.
 const PRIMARY_STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const FALLBACK_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
-const STYLE_LOAD_TIMEOUT_MS = 8000;
+const STYLE_LOAD_TIMEOUT_MS = 15000;
 const EARTH_CIRCUMFERENCE_PX_AT_Z0 = 156543.03392;
+const FALLBACK_DARKEN_FILTER = "invert(1) hue-rotate(180deg) brightness(0.82) saturate(0.6) contrast(0.9)";
 
 function computeZoom(latitude: number, radiusMeters: number, desiredRadiusPx: number): number {
   const latRad = (latitude * Math.PI) / 180;
@@ -39,6 +42,7 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
   const styleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefs = usePreferencesStore();
   const [mapError, setMapError] = useState<string | null>(null);
+  const [activeStyle, setActiveStyle] = useState<"primary" | "fallback">("primary");
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -90,15 +94,23 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
     // and DOM-interaction features that work immediately, and the radar
     // overlay (rings/sweep/aircraft/user marker) must never be held hostage
     // by a slow or unreachable tile CDN. Only style-dependent setup (adding
-    // the airports source/layers, toggling layer visibility) waits for 'load'.
+    // the airports source/layers, toggling layer visibility) waits for the
+    // style to actually finish loading.
     mapRef.current = map;
     onMapReady(map);
     armStyleTimeout();
 
-    map.on("load", () => {
+    // 'style.load' — unlike 'load', which only ever fires once for a Map
+    // instance's whole lifetime — fires every time a style successfully
+    // finishes loading, including after our own setStyle(fallback) call.
+    // Relying on 'load' here left the error banner stuck (and airports/layer
+    // toggles broken) whenever the *fallback* was the one that actually
+    // succeeded, because 'load' had nothing left to fire for.
+    map.on("style.load", () => {
       clearStyleTimeout();
       styleLoadedRef.current = true;
       setMapError(null);
+      setActiveStyle(styleAttemptRef.current);
       ensureAirportLayers(map);
       applyMapLayerVisibility(map, {
         roads: prefs.roadsEnabled,
@@ -185,8 +197,16 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
         width/height (rather than relying on `position: absolute` + `inset-0`
         to stretch it) sidesteps that cascade fight entirely.
       */}
-      <div className="absolute inset-0">
-        <div ref={containerRef} style={{ width: "100%", height: "100%" }} aria-hidden="true" />
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          ref={containerRef}
+          style={{
+            width: "100%",
+            height: "100%",
+            filter: activeStyle === "fallback" ? FALLBACK_DARKEN_FILTER : undefined,
+          }}
+          aria-hidden="true"
+        />
       </div>
       {mapError && (
         <div className="pointer-events-none absolute inset-x-3 top-24 z-10 rounded-md border border-radar-panelborder bg-radar-panel/85 px-3 py-1.5 text-center font-mono text-[9px] leading-tight text-radar-textdim backdrop-blur-sm">
