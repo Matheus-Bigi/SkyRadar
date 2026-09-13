@@ -33,6 +33,7 @@ interface SimTrack {
   speedKt: number;
   targetAltitudeFt: number;
   altitudeRateFtPerSec: number;
+  oatJitterC: number;
   expiresAt: number;
 }
 
@@ -63,6 +64,20 @@ function randomRegistration(): string {
 }
 function randomMilTail(): string {
   return `${Math.floor(rand(10, 24))}-${Math.floor(rand(10000, 99999))}`;
+}
+
+const ISA_SEA_LEVEL_C = 15;
+const ISA_LAPSE_RATE_C_PER_FT = 1.98 / 1000;
+const ISA_TROPOPAUSE_FT = 36089;
+const ISA_TROPOPAUSE_C = -56.5;
+
+/** International Standard Atmosphere temperature estimate for a given altitude, plus a little per-aircraft noise so it isn't a bare lookup table. */
+function estimateOutsideAirTempC(altitudeFt: number, jitterC: number): number {
+  const base =
+    altitudeFt <= ISA_TROPOPAUSE_FT
+      ? ISA_SEA_LEVEL_C - ISA_LAPSE_RATE_C_PER_FT * altitudeFt
+      : ISA_TROPOPAUSE_C;
+  return base + jitterC;
 }
 
 const AIRLINES: { icao: string; name: string; types: [string, string][] }[] = [
@@ -270,6 +285,7 @@ function spawnTrack(id: string, center: LatLon, edgeSpawn: boolean): SimTrack {
     registration,
   });
 
+  const oatJitterC = rand(-2, 2);
   const now = Date.now();
   const aircraft: Aircraft = {
     id,
@@ -289,6 +305,7 @@ function spawnTrack(id: string, center: LatLon, edgeSpawn: boolean): SimTrack {
     groundSpeed: Math.round(speedKt),
     heading,
     verticalSpeed: 0,
+    outsideAirTempC: Math.round(estimateOutsideAirTempC(altitudeFt, oatJitterC) * 10) / 10,
     lastUpdated: now,
     origin,
     destination,
@@ -301,6 +318,7 @@ function spawnTrack(id: string, center: LatLon, edgeSpawn: boolean): SimTrack {
     speedKt,
     targetAltitudeFt: altitudeFt + rand(-1500, 1500),
     altitudeRateFtPerSec: rand(-1.5, 1.5),
+    oatJitterC,
     expiresAt: now + rand(MIN_LIFETIME_MS, MAX_LIFETIME_MS),
   };
 }
@@ -343,6 +361,7 @@ function tickWorld(w: WorldState) {
     a.heading = newHeading;
     a.altitude = Math.max(0, Math.round(newAltitude));
     a.verticalSpeed = Math.round(track.altitudeRateFtPerSec * 60);
+    a.outsideAirTempC = Math.round(estimateOutsideAirTempC(a.altitude, track.oatJitterC) * 10) / 10;
     a.lastUpdated = now;
 
     const distFromCenter = distanceMeters(w.center, { latitude: a.latitude, longitude: a.longitude });

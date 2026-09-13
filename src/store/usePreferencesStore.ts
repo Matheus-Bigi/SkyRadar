@@ -21,6 +21,11 @@ export interface Preferences {
   militaryHighlighting: boolean;
   visualRangeHighlight: boolean;
 
+  // Orientation — false (default): map/radar stay north-up, fixed. true: the
+  // map and radar plot rotate to keep the device's current heading pointing
+  // "up" on screen, following you as you turn.
+  headingUpMode: boolean;
+
   // Sky View
   arLabelsEnabled: boolean;
   arDistanceDisplay: boolean;
@@ -42,6 +47,7 @@ const defaults: Preferences = {
   showCallsigns: true,
   militaryHighlighting: true,
   visualRangeHighlight: true,
+  headingUpMode: false,
 
   arLabelsEnabled: true,
   arDistanceDisplay: true,

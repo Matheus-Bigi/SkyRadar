@@ -3,13 +3,23 @@
 import { useEffect, useRef } from "react";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { Aircraft } from "../lib/aircraft/types";
-import { LatLon, bearingDegrees, deriveGeometry, distanceMeters, feetToMeters, milesToMeters, toRad } from "../lib/geo";
+import {
+  LatLon,
+  bearingDegrees,
+  deriveGeometry,
+  distanceMeters,
+  feetToMeters,
+  milesToMeters,
+  normalizeDegrees,
+  toRad,
+} from "../lib/geo";
 import { drawSilhouette } from "../lib/render/silhouettes";
 import { interpolateAircraftFrame } from "../lib/render/interpolate";
 import { useAircraftStore } from "../store/useAircraftStore";
 import { RangeMiles, DisplayMode, CategoryFilter } from "../store/useRadarStore";
 import { THEME, VISUALLY_RELEVANT_MILES } from "../lib/render/theme";
 import { playRadarBlip } from "../lib/audio/radarBeep";
+import { fmtAltitude, fmtSpeed } from "../lib/format";
 
 const SWEEP_PERIOD_MS = 6500;
 const HIT_RADIUS_PX = 16;
@@ -37,6 +47,7 @@ export interface RadarCanvasProps {
   categoryFilter: CategoryFilter;
   selectedAircraftId: string | null;
   lockCenter: boolean;
+  headingUpMode: boolean;
   placeName: string | null;
   prefs: RadarCanvasPrefs;
   onSelect: (id: string | null) => void;
@@ -49,8 +60,14 @@ interface DrawnMarker {
   y: number;
 }
 
-function bearingToScreenRad(bearingDeg: number): number {
-  return toRad(bearingDeg - 90);
+/**
+ * Converts a compass bearing to a screen-space angle. `rotationOffsetDeg` is
+ * whichever bearing should currently point "up" — 0 (true north) in the
+ * default fixed/north-up mode, or the device's current heading in
+ * heading-up (dynamic) mode, so the whole plot turns as the user turns.
+ */
+function bearingToScreenRad(bearingDeg: number, rotationOffsetDeg = 0): number {
+  return toRad(bearingDeg - rotationOffsetDeg - 90);
 }
 
 function categoryMatches(filter: CategoryFilter, aircraft: Aircraft): boolean {
@@ -122,8 +139,20 @@ export default function RadarCanvas(props: RadarCanvasProps) {
     const render = (time: number) => {
       rafId = requestAnimationFrame(render);
       const canvas = canvasRef.current;
-      const { map, userPosition, userAltitudeMeters, userHeading, mode, rangeMiles, categoryFilter, selectedAircraftId, lockCenter, placeName, prefs } =
-        latestRef.current;
+      const {
+        map,
+        userPosition,
+        userAltitudeMeters,
+        userHeading,
+        mode,
+        rangeMiles,
+        categoryFilter,
+        selectedAircraftId,
+        lockCenter,
+        headingUpMode,
+        placeName,
+        prefs,
+      } = latestRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -147,6 +176,9 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       // we fall back to true geographic projection via map.project().
       const usePolar = lockCenter || !map;
       const rangeMetersFull = milesToMeters(rangeMiles);
+      // Which bearing currently points "up" — the user's heading in dynamic
+      // mode (once we actually have a heading reading), true north otherwise.
+      const rotationOffsetDeg = headingUpMode && userHeading !== null ? userHeading : 0;
 
       let centerPt: { x: number; y: number };
       let radiusPx: number;
@@ -164,7 +196,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
           const bearing = bearingDegrees(userPosition, { latitude: lat, longitude: lon });
           const dist = distanceMeters(userPosition, { latitude: lat, longitude: lon });
           const r = radiusPx * Math.min(dist / rangeMetersFull, 1.15);
-          const rad = bearingToScreenRad(bearing);
+          const rad = bearingToScreenRad(bearing, rotationOffsetDeg);
           return { x: centerPt.x + r * Math.cos(rad), y: centerPt.y + r * Math.sin(rad) };
         }
         return map!.project([lon, lat]);
@@ -174,7 +206,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
 
       if (radarOn) {
         try {
-          drawRings(ctx, centerPt.x, centerPt.y, radiusPx);
+          drawRings(ctx, centerPt.x, centerPt.y, radiusPx, rotationOffsetDeg);
           drawSweep(ctx, centerPt.x, centerPt.y, radiusPx, sweepAngleRef.current);
         } catch (err) {
           console.error("[radar] rings/sweep draw failed", err);
@@ -233,7 +265,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
               { latitude: a.latitude, longitude: a.longitude },
               feetToMeters(a.altitude ?? 0)
             ).bearing;
-            if (sweepCrossed(prevSweep, sweepAngleRef.current, bearing)) {
+            if (sweepCrossed(prevSweep, sweepAngleRef.current, normalizeDegrees(bearing - rotationOffsetDeg))) {
               sweepDetectedAtRef.current[a.id] = now;
               if (prefs.radarSoundEnabled) playRadarBlip();
             }
@@ -290,7 +322,13 @@ function sweepCrossed(prev: number, curr: number, bearing: number): boolean {
   return bearing > p || bearing <= c;
 }
 
-function drawRings(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number) {
+function drawRings(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  rotationOffsetDeg: number
+) {
   ctx.save();
   for (const frac of [0.25, 0.5, 0.75, 1]) {
     ctx.beginPath();
@@ -301,7 +339,7 @@ function drawRings(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius
   }
   ctx.globalAlpha = 0.35;
   for (let deg = 0; deg < 360; deg += 45) {
-    const rad = bearingToScreenRad(deg);
+    const rad = bearingToScreenRad(deg, rotationOffsetDeg);
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + radius * Math.cos(rad), cy + radius * Math.sin(rad));
@@ -311,6 +349,9 @@ function drawRings(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius
   }
   ctx.globalAlpha = 1;
 
+  // N/E/S/W stay at their true compass bearings — in heading-up mode this
+  // rotates them around the ring so they keep pointing the right way as the
+  // whole plot turns with the device.
   const labels: [number, string][] = [
     [0, "N"],
     [90, "E"],
@@ -322,7 +363,7 @@ function drawRings(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const [deg, label] of labels) {
-    const rad = bearingToScreenRad(deg);
+    const rad = bearingToScreenRad(deg, rotationOffsetDeg);
     const x = cx + (radius + 13) * Math.cos(rad);
     const y = cy + (radius + 13) * Math.sin(rad);
     ctx.fillText(label, x, y);
@@ -499,23 +540,41 @@ function drawAircraftMarker(
   }
 
   if (opts.showLabel && a.callsign) {
+    // Second line — altitude + speed — gives the "who is this and how fast/
+    // high are they" answer right on the plot, without needing to tap in.
+    const detailLine = [fmtAltitude(a.altitude), fmtSpeed(a.groundSpeed)].filter(Boolean).join("  ");
+
     ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
-    const width = ctx.measureText(a.callsign).width;
+    const line1Width = ctx.measureText(a.callsign).width;
+    let line2Width = 0;
+    if (detailLine) {
+      ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+      line2Width = ctx.measureText(detailLine).width;
+    }
+    const width = Math.max(line1Width, line2Width);
+    const height = detailLine ? 23 : 12;
+
     const candidates = [
-      { x: x - width / 2, y: y - size - 18 },
+      { x: x - width / 2, y: y - size - 6 - height },
       { x: x - width / 2, y: y + size + (isMil ? 16 : 6) },
     ];
     for (const c of candidates) {
-      const rect = { x: c.x, y: c.y, w: width, h: 12 };
+      const rect = { x: c.x, y: c.y, w: width, h: height };
       const collides = opts.placedLabelRects.some(
         (r) => !(rect.x + rect.w < r.x || rect.x > r.x + r.w || rect.y + rect.h < r.y || rect.y > r.y + r.h)
       );
       if (!collides) {
         opts.placedLabelRects.push(rect);
-        ctx.fillStyle = opts.selected ? THEME.selected : THEME.label;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
+        ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
+        ctx.fillStyle = opts.selected ? THEME.selected : THEME.label;
         ctx.fillText(a.callsign, c.x, c.y);
+        if (detailLine) {
+          ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+          ctx.fillStyle = THEME.labelDim;
+          ctx.fillText(detailLine, c.x, c.y + 12);
+        }
         break;
       }
     }

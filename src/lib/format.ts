@@ -1,5 +1,7 @@
 /** Formatting helpers — every one returns null for missing data so callers can hide the field entirely (spec #8). */
 
+import { celsiusToFahrenheit, feetToMeters, knotsToKmh, knotsToMph } from "./geo";
+
 export function fmtMiles(mi: number | null | undefined): string | null {
   if (mi === null || mi === undefined || !Number.isFinite(mi)) return null;
   return `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} MI`;
@@ -10,9 +12,27 @@ export function fmtAltitude(ft: number | null | undefined): string | null {
   return `${Math.round(ft).toLocaleString()} FT`;
 }
 
+/** Altitude in meters only — pairs alongside `fmtAltitude` (feet) as the metric unit. */
+export function fmtAltitudeMeters(ft: number | null | undefined): string | null {
+  if (ft === null || ft === undefined || !Number.isFinite(ft)) return null;
+  return `${Math.round(feetToMeters(ft)).toLocaleString()} M`;
+}
+
 export function fmtSpeed(kt: number | null | undefined): string | null {
   if (kt === null || kt === undefined || !Number.isFinite(kt)) return null;
   return `${Math.round(kt)} KT`;
+}
+
+/** Speed in km/h + mph — pairs alongside `fmtSpeed` (knots) as the metric/imperial units. */
+export function fmtSpeedMetric(kt: number | null | undefined): string | null {
+  if (kt === null || kt === undefined || !Number.isFinite(kt)) return null;
+  return `${Math.round(knotsToKmh(kt))} KM/H · ${Math.round(knotsToMph(kt))} MPH`;
+}
+
+/** Outside air temperature, Celsius + Fahrenheit — hidden entirely when unavailable. */
+export function fmtTemp(c: number | null | undefined): string | null {
+  if (c === null || c === undefined || !Number.isFinite(c)) return null;
+  return `${Math.round(c)}°C · ${Math.round(celsiusToFahrenheit(c))}°F`;
 }
 
 export function fmtHeading(deg: number | null | undefined): string | null {

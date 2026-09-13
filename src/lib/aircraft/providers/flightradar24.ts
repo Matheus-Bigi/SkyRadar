@@ -136,6 +136,9 @@ function parseFlight(raw: unknown): Aircraft | null {
     groundSpeed: num(r.gspeed ?? r.speed ?? r.ground_speed),
     heading: num(r.track ?? r.heading),
     verticalSpeed: num(r.vspeed ?? r.vertical_speed),
+    // Outside air temperature (Celsius) — not exposed by every FR24 plan;
+    // wired defensively so it lights up automatically if yours reports it.
+    outsideAirTempC: num(r.oat ?? r.outside_air_temp ?? r.temperature ?? r.temp),
     lastUpdated: (() => {
       const ts = num(r.timestamp);
       return ts ? (ts > 1e12 ? ts : ts * 1000) : Date.now();
