@@ -144,7 +144,7 @@ export default function SkyRadarApp() {
       {aircraftStore.status === "ready" && visibleAircraftCount === 0 && !selection.selectedAircraftId && (
         <EmptyState rangeMiles={radar.rangeMiles} />
       )}
-      <DataStatusBanner status={aircraftStore.status} />
+      <DataStatusBanner status={aircraftStore.status} source={aircraftStore.source} />
 
       <div
         className={clsx(

@@ -153,6 +153,9 @@ export function feetToMeters(ft: number): number {
 export function knotsToMps(kt: number): number {
   return kt * MPS_PER_KNOT;
 }
+export function mpsToKnots(mps: number): number {
+  return mps / MPS_PER_KNOT;
+}
 export function knotsToKmh(kt: number): number {
   return kt * KMH_PER_KNOT;
 }
