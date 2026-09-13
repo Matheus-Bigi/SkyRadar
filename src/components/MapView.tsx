@@ -51,6 +51,15 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
     map.keyboard.disable();
     map.dragPan.disable();
 
+    // Expose the map as soon as it exists, not once the style/tiles finish
+    // loading: `map.project()`/`map.on('click', ...)` are pure camera-transform
+    // and DOM-interaction features that work immediately, and the radar
+    // overlay (rings/sweep/aircraft/user marker) must never be held hostage
+    // by a slow or unreachable tile CDN. Only style-dependent setup (adding
+    // the airports source/layers, toggling layer visibility) waits for 'load'.
+    mapRef.current = map;
+    onMapReady(map);
+
     map.on("load", () => {
       styleLoadedRef.current = true;
       ensureAirportLayers(map);
@@ -59,10 +68,7 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
         cities: prefs.citiesEnabled,
         neighborhoods: prefs.neighborhoodsEnabled,
       });
-      onMapReady(map);
     });
-
-    mapRef.current = map;
     return () => {
       map.remove();
       mapRef.current = null;

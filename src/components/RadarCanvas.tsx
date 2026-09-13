@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { Aircraft } from "../lib/aircraft/types";
-import { LatLon, deriveGeometry, distanceMeters, feetToMeters, milesToMeters, toRad } from "../lib/geo";
+import { LatLon, bearingDegrees, deriveGeometry, distanceMeters, feetToMeters, milesToMeters, toRad } from "../lib/geo";
 import { drawSilhouette } from "../lib/render/silhouettes";
 import { interpolateAircraftFrame } from "../lib/render/interpolate";
 import { useAircraftStore } from "../store/useAircraftStore";
@@ -13,6 +13,9 @@ import { playRadarBlip } from "../lib/audio/radarBeep";
 
 const SWEEP_PERIOD_MS = 6500;
 const HIT_RADIUS_PX = 16;
+// Matches MapView's own desiredRadiusPx fraction so the polar radar plot
+// and the geographic map (when it's loaded) agree on scale.
+const RADAR_RADIUS_FRACTION = 0.42;
 
 export interface RadarCanvasPrefs {
   radarGraphicsEnabled: boolean;
@@ -32,6 +35,7 @@ export interface RadarCanvasProps {
   rangeMiles: RangeMiles;
   categoryFilter: CategoryFilter;
   selectedAircraftId: string | null;
+  lockCenter: boolean;
   prefs: RadarCanvasPrefs;
   onSelect: (id: string | null) => void;
   onOverlapChoices: (ids: string[]) => void;
@@ -115,9 +119,9 @@ export default function RadarCanvas(props: RadarCanvasProps) {
     const render = (time: number) => {
       rafId = requestAnimationFrame(render);
       const canvas = canvasRef.current;
-      const { map, userPosition, userAltitudeMeters, userHeading, mode, rangeMiles, categoryFilter, selectedAircraftId, prefs } =
+      const { map, userPosition, userAltitudeMeters, userHeading, mode, rangeMiles, categoryFilter, selectedAircraftId, lockCenter, prefs } =
         latestRef.current;
-      if (!canvas || !map) return;
+      if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
@@ -132,12 +136,36 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, widthCss, heightCss);
 
-      const centerPt = map.project([userPosition.longitude, userPosition.latitude]);
-      const edgePt = map.project([
-        userPosition.longitude,
-        userPosition.latitude + milesToMeters(rangeMiles) / 111320,
-      ]);
-      const radiusPx = Math.max(20, Math.hypot(edgePt.x - centerPt.x, edgePt.y - centerPt.y));
+      // The radar plot itself never depends on the base map having loaded:
+      // when locked to the user (the default) it's drawn as a pure
+      // bearing/distance polar plot centered on screen, exactly like a real
+      // radar scope — the map underneath is a nice-to-have visual, not a
+      // dependency. Only when the user has unlocked and panned the map do
+      // we fall back to true geographic projection via map.project().
+      const usePolar = lockCenter || !map;
+      const rangeMetersFull = milesToMeters(rangeMiles);
+
+      let centerPt: { x: number; y: number };
+      let radiusPx: number;
+      if (usePolar) {
+        centerPt = { x: widthCss / 2, y: heightCss / 2 };
+        radiusPx = Math.max(20, Math.min(widthCss, heightCss) * RADAR_RADIUS_FRACTION);
+      } else {
+        centerPt = map!.project([userPosition.longitude, userPosition.latitude]);
+        const edgePt = map!.project([userPosition.longitude, userPosition.latitude + rangeMetersFull / 111320]);
+        radiusPx = Math.max(20, Math.hypot(edgePt.x - centerPt.x, edgePt.y - centerPt.y));
+      }
+
+      const project = (lat: number, lon: number): { x: number; y: number } => {
+        if (usePolar) {
+          const bearing = bearingDegrees(userPosition, { latitude: lat, longitude: lon });
+          const dist = distanceMeters(userPosition, { latitude: lat, longitude: lon });
+          const r = radiusPx * Math.min(dist / rangeMetersFull, 1.15);
+          const rad = bearingToScreenRad(bearing);
+          return { x: centerPt.x + r * Math.cos(rad), y: centerPt.y + r * Math.sin(rad) };
+        }
+        return map!.project([lon, lat]);
+      };
 
       const radarOn = mode === "RADAR" && prefs.radarGraphicsEnabled;
 
@@ -164,20 +192,19 @@ export default function RadarCanvas(props: RadarCanvasProps) {
             rangeMetersLimit
       );
 
-
       const placedLabelRects: { x: number; y: number; w: number; h: number }[] = [];
       const markers: DrawnMarker[] = [];
       const prevSweep = sweepAngleRef.current - (360 / (SWEEP_PERIOD_MS / 1000)) * dt;
 
       for (const rendered of visible) {
         const a = rendered.aircraft;
-        const pt = map.project([a.longitude, a.latitude]);
+        const pt = project(a.latitude, a.longitude);
         markers.push({ id: a.id, x: pt.x, y: pt.y });
 
         if (prefs.aircraftTrailsEnabled) {
           const trail = store.trails[a.id];
           if (trail && trail.length > 1) {
-            const pts = trail.map((p) => map.project([p.longitude, p.latitude]));
+            const pts = trail.map((p) => project(p.latitude, p.longitude));
             drawTrail(ctx, pts);
           }
         }
