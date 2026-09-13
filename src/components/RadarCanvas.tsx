@@ -178,13 +178,17 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, widthCss, heightCss);
 
-      // The radar plot itself never depends on the base map having loaded:
-      // when locked to the user (the default) it's drawn as a pure
-      // bearing/distance polar plot centered on screen, exactly like a real
-      // radar scope — the map underneath is a nice-to-have visual, not a
-      // dependency. Only when the user has unlocked and panned the map do
-      // we fall back to true geographic projection via map.project().
-      const usePolar = lockCenter || !map;
+      // Whenever there's a map, everything is placed through its own
+      // projection, so an aircraft or airport can never drift away from the
+      // ground feature it's actually over. Drawing a polar plot alongside a
+      // Mercator map means trusting two independent scale calculations to
+      // agree, and they didn't.
+      //
+      // The polar path remains for when there is no map at all: the radar
+      // must still work as a pure bearing/distance scope if the basemap
+      // never loads. map.project() itself is just camera arithmetic and
+      // needs no tiles, so this stays independent of the tile servers.
+      const usePolar = !map;
       const rangeMetersFull = milesToMeters(rangeMiles);
       // Which bearing currently points "up" — the user's heading in dynamic
       // mode (once we actually have a heading reading), true north otherwise.
