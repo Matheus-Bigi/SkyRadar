@@ -2,7 +2,18 @@
 
 import { Aircraft } from "../lib/aircraft/types";
 import { GeoDerived } from "../lib/geo";
-import { categoryLabel, fmtAltitude, fmtHeading, fmtMiles, fmtRelativeTime, fmtSpeed, fmtVerticalSpeed } from "../lib/format";
+import {
+  categoryLabel,
+  fmtAltitude,
+  fmtAltitudeMeters,
+  fmtHeading,
+  fmtMiles,
+  fmtRelativeTime,
+  fmtSpeed,
+  fmtSpeedMetric,
+  fmtTemp,
+  fmtVerticalSpeed,
+} from "../lib/format";
 import SilhouetteIcon from "./SilhouetteIcon";
 import { useAircraftPhoto } from "../hooks/useAircraftPhoto";
 
@@ -15,12 +26,13 @@ export interface AircraftCardProps {
   onLookHere: () => void;
 }
 
-function Field({ label, value }: { label: string; value: string | null }) {
+function Field({ label, value, secondary }: { label: string; value: string | null; secondary?: string | null }) {
   if (!value) return null;
   return (
     <div className="flex flex-col">
       <span className="font-mono text-[9px] uppercase tracking-wider text-radar-textdim">{label}</span>
       <span className="text-sm text-radar-text">{value}</span>
+      {secondary && <span className="font-mono text-[9px] leading-tight text-radar-textdim">{secondary}</span>}
     </div>
   );
 }
@@ -62,8 +74,8 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
 
       <div className="grid grid-cols-4 gap-2 px-3 pb-3">
         <Field label="Dist" value={fmtMiles(geometry.distanceMiles)} />
-        <Field label="Alt" value={fmtAltitude(aircraft.altitude)} />
-        <Field label="Speed" value={fmtSpeed(aircraft.groundSpeed)} />
+        <Field label="Alt" value={fmtAltitude(aircraft.altitude)} secondary={fmtAltitudeMeters(aircraft.altitude)} />
+        <Field label="Speed" value={fmtSpeed(aircraft.groundSpeed)} secondary={fmtSpeedMetric(aircraft.groundSpeed)} />
         <Field label="Hdg" value={fmtHeading(aircraft.heading)} />
       </div>
 
@@ -121,11 +133,12 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
             <div className="mb-1 font-mono text-[10px] tracking-widest text-radar-textdim">POSITION</div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Distance" value={fmtMiles(geometry.distanceMiles)} />
-              <Field label="Altitude" value={fmtAltitude(aircraft.altitude)} />
-              <Field label="Ground speed" value={fmtSpeed(aircraft.groundSpeed)} />
+              <Field label="Altitude" value={fmtAltitude(aircraft.altitude)} secondary={fmtAltitudeMeters(aircraft.altitude)} />
+              <Field label="Ground speed" value={fmtSpeed(aircraft.groundSpeed)} secondary={fmtSpeedMetric(aircraft.groundSpeed)} />
               <Field label="Heading" value={fmtHeading(aircraft.heading)} />
               <Field label="Vertical speed" value={fmtVerticalSpeed(aircraft.verticalSpeed)} />
               <Field label="Bearing" value={fmtHeading(geometry.bearing)} />
+              <Field label="Outside air temp" value={fmtTemp(aircraft.outsideAirTempC)} />
               <Field label="Updated" value={fmtRelativeTime(aircraft.lastUpdated)} />
             </div>
           </div>

@@ -10,6 +10,8 @@ const EARTH_RADIUS_M = 6371000;
 const METERS_PER_MILE = 1609.344;
 const METERS_PER_FOOT = 0.3048;
 const MPS_PER_KNOT = 0.514444;
+const KMH_PER_KNOT = 1.852;
+const MPH_PER_KNOT = 1.150779;
 
 export interface LatLon {
   latitude: number;
@@ -150,6 +152,15 @@ export function feetToMeters(ft: number): number {
 }
 export function knotsToMps(kt: number): number {
   return kt * MPS_PER_KNOT;
+}
+export function knotsToKmh(kt: number): number {
+  return kt * KMH_PER_KNOT;
+}
+export function knotsToMph(kt: number): number {
+  return kt * MPH_PER_KNOT;
+}
+export function celsiusToFahrenheit(c: number): number {
+  return (c * 9) / 5 + 32;
 }
 
 export interface GeoDerived {

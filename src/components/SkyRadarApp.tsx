@@ -108,7 +108,14 @@ export default function SkyRadarApp() {
 
   return (
     <main className="relative h-full w-full select-none overflow-hidden bg-radar-bg">
-      <MapView center={geo.position} rangeMiles={radar.rangeMiles} lockCenter={radar.lockCenter} onMapReady={setMapInstance} />
+      <MapView
+        center={geo.position}
+        rangeMiles={radar.rangeMiles}
+        lockCenter={radar.lockCenter}
+        headingUpMode={prefs.headingUpMode}
+        userHeading={heading.heading}
+        onMapReady={setMapInstance}
+      />
 
       <RadarCanvas
         map={mapInstance}
@@ -120,6 +127,7 @@ export default function SkyRadarApp() {
         categoryFilter={radar.categoryFilter}
         selectedAircraftId={selection.selectedAircraftId}
         lockCenter={radar.lockCenter}
+        headingUpMode={prefs.headingUpMode}
         placeName={placeName}
         prefs={{
           radarGraphicsEnabled: prefs.radarGraphicsEnabled,
@@ -156,6 +164,25 @@ export default function SkyRadarApp() {
         )}
       >
         <CompassWidget heading={heading.heading} />
+        {heading.supported && (
+          <button
+            onClick={() => {
+              const next = !prefs.headingUpMode;
+              prefs.set("headingUpMode", next);
+              if (next && heading.permission === "unknown") heading.requestPermission();
+            }}
+            aria-pressed={prefs.headingUpMode}
+            aria-label="Toggle heading-up rotation"
+            className={clsx(
+              "rounded-full border px-2 py-1 font-mono text-[9px] tracking-widest backdrop-blur-sm",
+              prefs.headingUpMode
+                ? "border-radar-green/40 bg-radar-panel/80 text-radar-green"
+                : "border-radar-panelborder bg-radar-panel/80 text-radar-textdim"
+            )}
+          >
+            {prefs.headingUpMode ? "HDG UP" : "N UP"}
+          </button>
+        )}
         <button
           onClick={() => radar.setLockCenter(!radar.lockCenter)}
           aria-pressed={radar.lockCenter}

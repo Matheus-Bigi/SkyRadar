@@ -44,6 +44,7 @@ export interface Aircraft {
   groundSpeed?: number; // knots
   heading?: number; // degrees true, 0-360
   verticalSpeed?: number; // feet per minute
+  outsideAirTempC?: number; // Celsius, when a provider reports (or estimates) it
   lastUpdated: number; // epoch ms
 
   // Route

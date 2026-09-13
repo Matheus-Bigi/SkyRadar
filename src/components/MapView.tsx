@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Map as MapLibreMap, GeoJSONSource, ErrorEvent as MapLibreErrorEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { LatLon, milesToMeters } from "../lib/geo";
+import { LatLon, milesToMeters, normalizeSignedDegrees } from "../lib/geo";
 import { nearbyAirports } from "../lib/airports";
 import { applyMapLayerVisibility, ensureAirportLayers, AIRPORTS_SOURCE_ID } from "../lib/render/mapLayers";
 import { usePreferencesStore } from "../store/usePreferencesStore";
@@ -31,10 +31,12 @@ export interface MapViewProps {
   center: LatLon;
   rangeMiles: RangeMiles;
   lockCenter: boolean;
+  headingUpMode: boolean;
+  userHeading: number | null;
   onMapReady: (map: MapLibreMap) => void;
 }
 
-export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: MapViewProps) {
+export default function MapView({ center, rangeMiles, lockCenter, headingUpMode, userHeading, onMapReady }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const styleLoadedRef = useRef(false);
@@ -148,6 +150,26 @@ export default function MapView({ center, rangeMiles, lockCenter, onMapReady }: 
     if (lockCenter) map.dragPan.disable();
     else map.dragPan.enable();
   }, [lockCenter]);
+
+  // Heading-up (dynamic) rotation: keep the map's own bearing in sync with
+  // the device heading so its tiles/roads/airports rotate along with the
+  // radar overlay drawn on top (RadarCanvas does the equivalent math for its
+  // own polar plot). Applied with setBearing (no animation) since heading
+  // updates can arrive many times a second — only skip tiny jitter so we
+  // aren't forcing a repaint every frame for a fraction of a degree.
+  const lastBearingRef = useRef(0);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const target = headingUpMode && userHeading !== null ? userHeading : 0;
+    if (Math.abs(normalizeSignedDegrees(target - lastBearingRef.current)) < 1) return;
+    lastBearingRef.current = target;
+    if (!headingUpMode) {
+      map.easeTo({ bearing: 0, duration: 300 });
+    } else {
+      map.setBearing(target);
+    }
+  }, [headingUpMode, userHeading]);
 
   // Layer visibility toggles.
   useEffect(() => {
