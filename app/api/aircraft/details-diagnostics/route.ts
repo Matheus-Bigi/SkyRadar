@@ -5,7 +5,8 @@ import { probeFlightRoute } from "@/lib/aircraft/flightroute";
 export const dynamic = "force-dynamic";
 
 /**
- * Why is this aircraft's card missing a photo or a route?
+ * Why is this aircraft's card missing a photo or a route — or showing the
+ * wrong one?
  *
  * The sibling of /api/aircraft/diagnostics, for the two per-aircraft
  * lookups. Both fail silently by design — a card showing nothing is the
@@ -15,8 +16,8 @@ export const dynamic = "force-dynamic";
  * adsb.lol and adsbdb are saying right now.
  *
  * Example:
- *   /api/aircraft/details-diagnostics?hex=a2d0f4&registration=N273AK
- *     &callsign=ASA642&lat=45.60&lon=-122.35
+ *   /api/aircraft/details-diagnostics?hex=a2d0f4&registration=N487AS
+ *     &callsign=ASA638&lat=45.485&lon=-122.265&altitude=2100&verticalSpeed=-704&track=299
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -25,9 +26,17 @@ export async function GET(req: NextRequest) {
   const callsign = searchParams.get("callsign") ?? undefined;
   const lat = parseFloat(searchParams.get("lat") ?? "");
   const lon = parseFloat(searchParams.get("lon") ?? "");
-  const position =
+  const altitude = parseFloat(searchParams.get("altitude") ?? "");
+  const verticalSpeed = parseFloat(searchParams.get("verticalSpeed") ?? "");
+  const track = parseFloat(searchParams.get("track") ?? "");
+  const aircraft =
     Number.isFinite(lat) && Number.isFinite(lon)
-      ? { latitude: lat, longitude: lon }
+      ? {
+          position: { latitude: lat, longitude: lon },
+          altitude: Number.isFinite(altitude) ? altitude : undefined,
+          verticalSpeed: Number.isFinite(verticalSpeed) ? verticalSpeed : undefined,
+          track: Number.isFinite(track) ? track : undefined,
+        }
       : undefined;
 
   const [photo, route] = await Promise.all([
@@ -35,21 +44,23 @@ export async function GET(req: NextRequest) {
       ? probeAircraftPhoto({ icao24: hex, registration })
       : Promise.resolve({ skipped: "pass ?hex= and/or ?registration=" }),
     callsign
-      ? probeFlightRoute(callsign, position)
+      ? probeFlightRoute(callsign, aircraft)
       : Promise.resolve({ skipped: "pass ?callsign= (and ?lat=&lon= to check it)" }),
   ]);
 
   return NextResponse.json(
     {
       checkedAt: new Date().toISOString(),
-      positionUsed: position ?? null,
+      aircraftStateUsed: aircraft ?? null,
       photo,
       route,
       notes: [
-        "A route is only shown if it fits where the aircraft actually is: flying it",
-        "via the aircraft's position must add no more than 80km, and the aircraft",
-        "must be within 150km of the direct path. `verdict` shows the measurements",
-        "behind each accept/reject.",
+        "A route is only shown if it fits what the aircraft is actually doing.",
+        "Strongest test: an aircraft low and descending must be near its claimed",
+        "destination (and low and climbing, near its origin) — roughly six times",
+        "the 3:1 descent rule. Then corridor geometry (<=80km detour, <=150km to",
+        "the side) and, once clear of both terminal areas, direction of travel.",
+        "`verdict` shows every measurement behind each accept/reject.",
       ].join(" "),
     },
     { headers: { "Cache-Control": "no-store" } }

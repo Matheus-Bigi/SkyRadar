@@ -44,7 +44,7 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
   // keyed on this aircraft's own identity and clears when the selection
   // changes, so one aircraft's details can never linger over another's.
   const photo = useAircraftPhoto(aircraft.id, aircraft.registration);
-  const route = useAircraftRoute(aircraft.callsign, aircraft.latitude, aircraft.longitude);
+  const route = useAircraftRoute(aircraft);
   const isMilitary = aircraft.isMilitary;
 
   // The route database names the operating carrier; the callsign's ICAO

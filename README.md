@@ -135,11 +135,17 @@ Both lookups fail silently by design — a card showing nothing is the right
 outcome when nothing real is available — which makes "no photo exists" and
 "the lookup timed out" look identical from the outside. The card itself now
 distinguishes them (*no photo on file* vs. a retry button), and
-**`/api/aircraft/details-diagnostics?hex=&registration=&callsign=&lat=&lon=`**
-shows the whole picture: what Planespotters, adsb.lol and adsbdb each said,
-how long they took, and — for every route candidate — the measured detour
-and corridor distances behind its accept or reject. It bypasses every cache,
-so it reports what those services are doing right now.
+**`/api/aircraft/details-diagnostics`** shows the whole picture: every photo
+source's HTTP status and a raw response excerpt (so "no photo" can be told
+apart from "a photo we failed to parse"), and for every route candidate the
+full set of measurements behind its accept or reject — phase of flight,
+distance to each airport, detour, cross-track and track error. It bypasses
+every cache, so it reports what those services are doing right now.
+
+```
+/api/aircraft/details-diagnostics?hex=a2d0f4&registration=N487AS
+  &callsign=ASA638&lat=45.485&lon=-122.265&altitude=2100&verticalSpeed=-704&track=299
+```
 
 ### Debugging live data
 
@@ -177,13 +183,22 @@ aircraft's own identity and cleared the moment the selection changes —
 leaving one aircraft's photo or route on another's card would be showing
 something that isn't real.
 
-**The photo** (`/api/aircraft/photo`, Planespotters.net) is a photo of that
-exact airframe, never a stock image of the type. It's asked for by ICAO
-24-bit address first and registration second, and that order is the whole
-fix for photos rarely appearing: the hex is broadcast by the aircraft
-itself, while the registration depends on a database lookup the feed may
-never have made. Asking by registration alone meant every aircraft the feed
-couldn't name got no photo at all.
+**The photo** (`/api/aircraft/photo`) is a photo of that exact airframe,
+never a stock image of the type. Three separate things decide whether one
+actually turns up, and all three used to get in the way:
+
+- *Which identifier is asked for.* The hex is broadcast by the aircraft
+  itself and is always known; the registration depends on a database lookup
+  the feed may never have made. Hex goes first, registration second.
+- *Which field the answer is read from.* Planespotters doesn't guarantee a
+  `thumbnail_large` on every photo, and reading only that field turned
+  perfectly good photos into "none on file".
+- *How many sources are tried.* Planespotters (by hex, then registration),
+  then airport-data.com (the same way). One service having a bad moment, or
+  simply not holding that airframe, is no longer the end of it.
+
+A non-JSON response — a rate-limit page, say — is treated as an error to
+retry, never as "this airframe has no photo".
 
 **The route** (`/api/aircraft/flightroute`) has to be looked up, because
 ADS-B doesn't carry one — an aircraft broadcasts its identity, position and
@@ -197,26 +212,40 @@ guaranteed miss.
 
 These databases are keyed on callsign alone, and callsigns are reused —
 across days, and across entirely different legs — so a lookup can answer
-confidently with a route the aircraft is demonstrably not flying. This is
-not hypothetical: ASA642 over Portland, climbing east, came back as
-Seattle→Denver while it was really flying Portland→Newark.
+confidently with a route the aircraft is demonstrably not flying. Two real
+examples drove the checks below:
 
-Geometry settles it, and every candidate is checked before it can reach the
-card:
+- **ASA642** over Portland, climbing east, came back as Seattle→Denver. It
+  was really flying Portland→Newark.
+- **ASA638** at 2,100 feet, descending 704 fpm on final approach to
+  Portland, came back as Seattle→**Tucson**.
 
-- **Detour** — how much further the aircraft would have to fly, going via
-  where it actually is, than the direct origin→destination distance. This is
-  the primary test, because it separates cleanly: a genuine Seattle→LA
-  overflight of Portland costs 17km of detour and a real westward weather
-  deviation 52km, while that bogus Seattle→Denver leg costs 118km. Flying
-  backwards adds detour too, so "behind the origin" and "past the
-  destination" fall out for free. The limit is 80km.
-- **Corridor** — distance to the side of the direct path, capped at 150km.
-  A backstop for the one case detour is blind to: on a very long leg, a big
-  perpendicular offset barely lengthens the journey at all (200km off the
-  middle of a transpacific route adds about 10km).
+The second is the instructive one. Portland genuinely lies close to the
+Seattle→Tucson path — the detour is a mere 38km, the corridor offset 118km —
+so *no* amount of map geometry could ever catch it. What catches it is the
+aircraft itself: at 2,100 feet and descending it is about three minutes from
+a runway, and the claimed destination was 1,777km away.
 
-Both limits are fixed distances, never a fraction of route length — scaling
+So candidates are checked in order of how decisive the evidence is:
+
+1. **Phase of flight.** Below 10,000ft and descending, the aircraft is
+   arriving, and its destination must be close; below 10,000ft and climbing,
+   its origin must be. "Close" is six times the 3:1 descent rule every pilot
+   plans with (3nm per 1,000ft), with an 80km floor — generous enough for
+   shallow approaches, turboprops and early descents, nowhere near generous
+   enough for Tucson. High or level flight isn't judged by this rule at all.
+2. **Corridor geometry.** *Detour* — how much further the aircraft would
+   have to fly going via where it is — capped at 80km. A genuine Seattle→LA
+   overflight of Portland costs 17km and a real weather deviation 52km,
+   while the bogus Seattle→Denver leg costs 118km. Flying backwards adds
+   detour too, so "behind the origin" and "past the destination" come free.
+   Plus a 150km *cross-track* backstop, for the case detour is blind to: on
+   a very long leg a big sideways offset barely lengthens the journey.
+3. **Direction of travel.** Once clear of both terminal areas — where
+   aircraft legitimately turn every which way — the track should point
+   broadly at the destination. This catches a route listed back-to-front.
+
+Both distance limits are fixed, never a fraction of route length: scaling
 them would widen the corridor exactly as the bogus route got longer. A
 candidate that fails is discarded and the next source tried; if none
 survives, the card says *no confirmed route* rather than showing a

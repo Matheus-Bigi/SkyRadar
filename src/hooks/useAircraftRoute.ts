@@ -28,23 +28,44 @@ const EMPTY: RouteResult = {
 /**
  * Looks up where a flight came from and where it's headed.
  *
- * Keyed on the callsign, with the aircraft's position passed along so the
- * upstream database can confirm the route is plausible for where the
- * aircraft actually is. Only an airline flight ID can be looked up — a bare
- * tail number has no published route — so this stays idle for GA traffic
- * rather than firing a request that can only miss.
+ * Keyed on the callsign, with the aircraft's position, altitude, vertical
+ * speed and track sent along — that is what the server checks any candidate
+ * route against, and altitude matters most: an aircraft descending through
+ * 2,000 feet is minutes from a runway, whatever a callsign database claims
+ * about a destination a thousand miles away.
+ *
+ * Only an airline flight ID can be looked up — a bare tail number has no
+ * published route — so this stays idle for GA traffic rather than firing a
+ * request that can only miss.
  *
  * State resets on every callsign change: one aircraft's route must never be
  * left on screen over another's.
  */
-export function useAircraftRoute(
-  callsign: string | undefined,
-  latitude: number | undefined,
-  longitude: number | undefined
-): RouteResult {
+export interface RouteQueryAircraft {
+  callsign?: string;
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+  verticalSpeed?: number;
+  heading?: number;
+}
+
+export function useAircraftRoute(aircraft: RouteQueryAircraft): RouteResult {
   const [state, setState] = useState<RouteResult>(EMPTY);
-  const flightId = callsign?.trim().toUpperCase();
+
+  const flightId = aircraft.callsign?.trim().toUpperCase();
   const key = isAirlineFlightId(flightId) ? flightId : undefined;
+
+  // Everything the server checks the route against. Rounded, and folded into
+  // a single dependency, so the lookup re-runs when the aircraft has actually
+  // moved or changed phase — not on every poll's worth of jitter.
+  const query = [
+    aircraft.latitude.toFixed(3),
+    aircraft.longitude.toFixed(3),
+    aircraft.altitude !== undefined ? Math.round(aircraft.altitude / 500) * 500 : "",
+    aircraft.verticalSpeed !== undefined ? Math.round(aircraft.verticalSpeed / 500) * 500 : "",
+    aircraft.heading !== undefined ? Math.round(aircraft.heading / 10) * 10 : "",
+  ].join("|");
 
   useEffect(() => {
     if (!key) {
@@ -55,9 +76,11 @@ export function useAircraftRoute(
     let cancelled = false;
     setState({ ...EMPTY, loading: true });
 
-    const params = new URLSearchParams({ callsign: key });
-    if (latitude !== undefined) params.set("lat", latitude.toFixed(4));
-    if (longitude !== undefined) params.set("lon", longitude.toFixed(4));
+    const [lat, lon, alt, vs, trk] = query.split("|");
+    const params = new URLSearchParams({ callsign: key, lat, lon });
+    if (alt) params.set("altitude", alt);
+    if (vs) params.set("verticalSpeed", vs);
+    if (trk) params.set("track", trk);
 
     fetch(`/api/aircraft/flightroute?${params.toString()}`)
       .then((res) => res.json())
@@ -80,11 +103,7 @@ export function useAircraftRoute(
     return () => {
       cancelled = true;
     };
-    // Position is an input to the plausibility check, not a trigger: it
-    // changes every poll, and re-running the lookup each time would hammer a
-    // free database for an answer that cannot have changed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, query]);
 
   return state;
 }
