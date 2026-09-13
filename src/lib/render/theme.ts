@@ -18,6 +18,8 @@ export const THEME = {
   label: "#c3d6d0",
   labelDim: "#7d938c",
   compass: "#5f8478",
+  /** Ground features — deliberately cooler than aircraft so they recede. */
+  airport: "#6f97b5",
 } as const;
 
 export const VISUALLY_RELEVANT_MILES = 2.2;

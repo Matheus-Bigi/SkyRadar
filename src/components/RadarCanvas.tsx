@@ -30,6 +30,7 @@ const RADAR_RADIUS_FRACTION = 0.42;
 
 export interface RadarCanvasPrefs {
   radarGraphicsEnabled: boolean;
+  airportsEnabled: boolean;
   aircraftTrailsEnabled: boolean;
   showCallsigns: boolean;
   militaryHighlighting: boolean;
@@ -37,8 +38,16 @@ export interface RadarCanvasPrefs {
   radarSoundEnabled: boolean;
 }
 
+export interface RadarAirport {
+  latitude: number;
+  longitude: number;
+  label: string;
+  major: boolean;
+}
+
 export interface RadarCanvasProps {
   map: MapLibreMap | null;
+  airports: RadarAirport[];
   userPosition: LatLon;
   userAltitudeMeters: number;
   userHeading: number | null;
@@ -141,6 +150,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       const canvas = canvasRef.current;
       const {
         map,
+        airports,
         userPosition,
         userAltitudeMeters,
         userHeading,
@@ -210,6 +220,21 @@ export default function RadarCanvas(props: RadarCanvasProps) {
           drawSweep(ctx, centerPt.x, centerPt.y, radiusPx, sweepAngleRef.current);
         } catch (err) {
           console.error("[radar] rings/sweep draw failed", err);
+        }
+      }
+
+      // Airports sit under everything else: they're stationary context for
+      // reading the plot, not something competing with the aircraft. Drawn
+      // here rather than as a map layer so they can be labelled — a raster
+      // basemap carries no glyphs to render text with.
+      if (prefs.airportsEnabled) {
+        for (const airport of airports) {
+          try {
+            const pt = project(airport.latitude, airport.longitude);
+            drawAirport(ctx, pt.x, pt.y, airport.label, airport.major);
+          } catch (err) {
+            console.error("[radar] airport draw failed", airport.label, err);
+          }
         }
       }
 
@@ -409,6 +434,39 @@ function drawTrail(ctx: CanvasRenderingContext2D, points: { x: number; y: number
     ctx.lineWidth = 1.1;
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+function drawAirport(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  label: string,
+  major: boolean
+) {
+  const size = major ? 5 : 3.5;
+  ctx.save();
+  ctx.globalAlpha = 0.75;
+
+  // A square reads as "fixed ground feature" next to the aircraft
+  // silhouettes and the round user marker.
+  ctx.beginPath();
+  ctx.rect(x - size, y - size, size * 2, size * 2);
+  ctx.strokeStyle = THEME.airport;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  if (major) {
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = THEME.airport;
+    ctx.fill();
+  }
+
+  ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+  ctx.fillStyle = THEME.airport;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText(label, x, y + size + 3);
   ctx.restore();
 }
 

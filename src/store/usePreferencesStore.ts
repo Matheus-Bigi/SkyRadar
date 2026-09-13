@@ -22,6 +22,12 @@ export interface Preferences {
   // map and radar plot rotate to keep the device's current heading pointing
   // "up" on screen, following you as you turn.
   headingUpMode: boolean;
+  /**
+   * Manual compass correction, degrees added to the sensor heading. Phone and
+   * tablet magnetometers drift and are thrown off by cases and nearby metal,
+   * so the user gets to nudge it until the radar matches what they can see.
+   */
+  headingOffsetDeg: number;
 
   // Sky View
   arLabelsEnabled: boolean;
@@ -42,6 +48,7 @@ const defaults: Preferences = {
   militaryHighlighting: true,
   visualRangeHighlight: true,
   headingUpMode: false,
+  headingOffsetDeg: 0,
 
   arLabelsEnabled: true,
   arDistanceDisplay: true,
