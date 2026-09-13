@@ -13,6 +13,7 @@ import { playRadarBlip } from "../lib/audio/radarBeep";
 
 const SWEEP_PERIOD_MS = 6500;
 const HIT_RADIUS_PX = 16;
+const SWEEP_GLOW_DURATION_MS = 900;
 // Matches MapView's own desiredRadiusPx fraction so the polar radar plot
 // and the geographic map (when it's loaded) agree on scale.
 const RADAR_RADIUS_FRACTION = 0.42;
@@ -64,6 +65,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
   const lastFrameTimeRef = useRef<number | null>(null);
   const drawnMarkersRef = useRef<DrawnMarker[]>([]);
   const dprRef = useRef(1);
+  const sweepDetectedAtRef = useRef<Record<string, number>>({});
 
   // Canvas sizing, DPR-aware, tracks the shared map/canvas container.
   useEffect(() => {
@@ -170,8 +172,12 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       const radarOn = mode === "RADAR" && prefs.radarGraphicsEnabled;
 
       if (radarOn) {
-        drawRings(ctx, centerPt.x, centerPt.y, radiusPx);
-        drawSweep(ctx, centerPt.x, centerPt.y, radiusPx, sweepAngleRef.current);
+        try {
+          drawRings(ctx, centerPt.x, centerPt.y, radiusPx);
+          drawSweep(ctx, centerPt.x, centerPt.y, radiusPx, sweepAngleRef.current);
+        } catch (err) {
+          console.error("[radar] rings/sweep draw failed", err);
+        }
       }
 
       // Aircraft store read (non-reactive) — animation stays independent
@@ -191,52 +197,71 @@ export default function RadarCanvas(props: RadarCanvasProps) {
           distanceMeters(userPosition, { latitude: r.aircraft.latitude, longitude: r.aircraft.longitude }) <=
             rangeMetersLimit
       );
-
       const placedLabelRects: { x: number; y: number; w: number; h: number }[] = [];
       const markers: DrawnMarker[] = [];
       const prevSweep = sweepAngleRef.current - (360 / (SWEEP_PERIOD_MS / 1000)) * dt;
 
       for (const rendered of visible) {
-        const a = rendered.aircraft;
-        const pt = project(a.latitude, a.longitude);
-        markers.push({ id: a.id, x: pt.x, y: pt.y });
+        try {
+          const a = rendered.aircraft;
+          const pt = project(a.latitude, a.longitude);
+          markers.push({ id: a.id, x: pt.x, y: pt.y });
 
-        if (prefs.aircraftTrailsEnabled) {
-          const trail = store.trails[a.id];
-          if (trail && trail.length > 1) {
-            const pts = trail.map((p) => project(p.latitude, p.longitude));
-            drawTrail(ctx, pts);
+          if (prefs.aircraftTrailsEnabled) {
+            const trail = store.trails[a.id];
+            if (trail && trail.length > 1) {
+              const pts = trail.map((p) => project(p.latitude, p.longitude));
+              drawTrail(ctx, pts);
+            }
           }
-        }
 
-        const distM = distanceMeters(userPosition, { latitude: a.latitude, longitude: a.longitude });
-        const isVisuallyRelevant =
-          prefs.visualRangeHighlight && distM <= milesToMeters(VISUALLY_RELEVANT_MILES);
-        const isSelected = a.id === selectedAircraftId;
+          const distM = distanceMeters(userPosition, { latitude: a.latitude, longitude: a.longitude });
+          const isVisuallyRelevant =
+            prefs.visualRangeHighlight && distM <= milesToMeters(VISUALLY_RELEVANT_MILES);
+          const isSelected = a.id === selectedAircraftId;
 
-        drawAircraftMarker(ctx, pt.x, pt.y, rendered, {
-          selected: isSelected,
-          visuallyRelevant: isVisuallyRelevant,
-          militaryHighlighting: prefs.militaryHighlighting,
-          showLabel: prefs.showCallsigns,
-          placedLabelRects,
-        });
-
-        if (radarOn && prefs.radarSoundEnabled && rendered.opacity > 0.5) {
-          const bearing = deriveGeometry(
-            userPosition,
-            userAltitudeMeters,
-            userHeading ?? 0,
-            { latitude: a.latitude, longitude: a.longitude },
-            feetToMeters(a.altitude ?? 0)
-          ).bearing;
-          if (sweepCrossed(prevSweep, sweepAngleRef.current, bearing)) {
-            playRadarBlip();
+          // Detect the sweep passing this aircraft's bearing — drives both
+          // the optional beep and a brief "just detected" glow, independent
+          // of each other, so the visual radar-blip feeling works even with
+          // sound off.
+          if (radarOn && rendered.opacity > 0.5) {
+            const bearing = deriveGeometry(
+              userPosition,
+              userAltitudeMeters,
+              userHeading ?? 0,
+              { latitude: a.latitude, longitude: a.longitude },
+              feetToMeters(a.altitude ?? 0)
+            ).bearing;
+            if (sweepCrossed(prevSweep, sweepAngleRef.current, bearing)) {
+              sweepDetectedAtRef.current[a.id] = now;
+              if (prefs.radarSoundEnabled) playRadarBlip();
+            }
           }
+          const detectedAt = sweepDetectedAtRef.current[a.id];
+          const sweepGlow = detectedAt ? Math.max(0, 1 - (now - detectedAt) / SWEEP_GLOW_DURATION_MS) : 0;
+
+          drawAircraftMarker(ctx, pt.x, pt.y, rendered, {
+            selected: isSelected,
+            visuallyRelevant: isVisuallyRelevant,
+            militaryHighlighting: prefs.militaryHighlighting,
+            showLabel: prefs.showCallsigns,
+            placedLabelRects,
+            sweepGlow,
+          });
+        } catch (err) {
+          console.error("[radar] aircraft draw failed", rendered.aircraft.id, err);
         }
       }
 
       drawnMarkersRef.current = markers;
+
+      // Forget sweep-glow timestamps for aircraft no longer in the data set
+      // (landed/out of range) so this map doesn't grow unbounded over a
+      // long ambient session.
+      const currentIds = new Set(store.current.map((a) => a.id));
+      for (const id of Object.keys(sweepDetectedAtRef.current)) {
+        if (!currentIds.has(id)) delete sweepDetectedAtRef.current[id];
+      }
 
       // User marker always drawn last within the base layer so it never
       // gets visually buried under aircraft symbology.
@@ -369,6 +394,8 @@ interface MarkerDrawOptions {
   militaryHighlighting: boolean;
   showLabel: boolean;
   placedLabelRects: { x: number; y: number; w: number; h: number }[];
+  /** 0-1, fading out after the radar sweep just passed this aircraft's bearing. */
+  sweepGlow: number;
 }
 
 function drawAircraftMarker(
@@ -380,14 +407,30 @@ function drawAircraftMarker(
 ) {
   const a = rendered.aircraft;
   const isMil = a.isMilitary && opts.militaryHighlighting;
-  const size = opts.selected ? 15 : 11;
+  const size = (opts.selected ? 15 : 11) + opts.sweepGlow * 1.5;
 
   ctx.save();
   ctx.globalAlpha = rendered.opacity;
 
+  // A brief "just detected" ping — a fading ring expanding outward from the
+  // aircraft — drawn before the silhouette so the icon reads clearly on top.
+  if (opts.sweepGlow > 0.02) {
+    ctx.save();
+    ctx.globalAlpha = rendered.opacity * opts.sweepGlow * 0.7;
+    ctx.beginPath();
+    ctx.arc(x, y, size * (1.4 + (1 - opts.sweepGlow) * 1.6), 0, Math.PI * 2);
+    ctx.strokeStyle = THEME.radarGreen;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   if (opts.selected) {
     ctx.shadowColor = THEME.selectedGlow;
     ctx.shadowBlur = 16;
+  } else if (opts.sweepGlow > 0.02) {
+    ctx.shadowColor = THEME.sweepCore;
+    ctx.shadowBlur = 8 + opts.sweepGlow * 14;
   } else if (opts.visuallyRelevant) {
     ctx.shadowColor = THEME.visuallyRelevantGlow;
     ctx.shadowBlur = 9;
