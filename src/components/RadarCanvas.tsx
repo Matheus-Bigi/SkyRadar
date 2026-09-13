@@ -220,7 +220,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
 
       if (radarOn) {
         try {
-          drawRings(ctx, centerPt.x, centerPt.y, radiusPx, rotationOffsetDeg);
+          drawRings(ctx, centerPt.x, centerPt.y, radiusPx, rotationOffsetDeg, rangeMiles);
           drawSweep(ctx, centerPt.x, centerPt.y, radiusPx, sweepAngleRef.current);
         } catch (err) {
           console.error("[radar] rings/sweep draw failed", err);
@@ -351,15 +351,38 @@ function sweepCrossed(prev: number, curr: number, bearing: number): boolean {
   return bearing > p || bearing <= c;
 }
 
+/**
+ * Ring radii as a fraction of the outer ring, one entry per ring.
+ *
+ * Thirds, not quarters: every range SkyRadar offers (3/9/15/30 miles)
+ * divides cleanly by three, so each ring lands on a whole number of miles —
+ * 1/2/3, 3/6/9, 5/10/15, 10/20/30 — and can be labelled with a figure you
+ * can read at a glance instead of "6.75 MI".
+ */
+const RING_FRACTIONS = [1 / 3, 2 / 3, 1];
+
+/**
+ * Where the ring distance labels sit, as a screen-space bearing (0 = up).
+ * Off the vertical to clear the "N" marker, and off 45° to clear a radial.
+ */
+const RING_LABEL_BEARING = 27;
+
+/** Distance label for a ring, dropping a pointless trailing ".0". */
+function ringLabel(miles: number): string {
+  const rounded = Math.round(miles * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)} MI`;
+}
+
 function drawRings(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
   radius: number,
-  rotationOffsetDeg: number
+  rotationOffsetDeg: number,
+  rangeMiles: number
 ) {
   ctx.save();
-  for (const frac of [0.25, 0.5, 0.75, 1]) {
+  for (const frac of RING_FRACTIONS) {
     ctx.beginPath();
     ctx.arc(cx, cy, radius * frac, 0, Math.PI * 2);
     ctx.strokeStyle = frac === 1 ? THEME.ringStrong : THEME.ring;
@@ -396,6 +419,29 @@ function drawRings(
     const x = cx + (radius + 13) * Math.cos(rad);
     const y = cy + (radius + 13) * Math.sin(rad);
     ctx.fillText(label, x, y);
+  }
+
+  // How far out each ring is. Kept deliberately quiet — this is a scale you
+  // consult, not something that should compete with the aircraft.
+  //
+  // Placed at a fixed angle in *screen* space, so the numbers stay upright
+  // and in the same place whether the plot is north-up or turning with the
+  // device. Tilted off vertical because straight up is where the "N" marker
+  // lives, and the outermost label landed right on top of it. A dark halo
+  // keeps them legible where they cross a radial or a bright patch of map.
+  const labelAngle = toRad(RING_LABEL_BEARING - 90);
+  ctx.font = "9px ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+  ctx.fillStyle = THEME.ringLabel;
+  for (const frac of RING_FRACTIONS) {
+    const text = ringLabel(rangeMiles * frac);
+    // Just inside its own ring, so each number clearly belongs to one circle.
+    const r = Math.max(0, radius * frac - 9);
+    ctx.strokeText(text, cx + r * Math.cos(labelAngle), cy + r * Math.sin(labelAngle));
+    ctx.fillText(text, cx + r * Math.cos(labelAngle), cy + r * Math.sin(labelAngle));
   }
   ctx.restore();
 }

@@ -148,6 +148,23 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
             </div>
           )}
 
+          {/* "No photo on file" and "the lookup broke" look the same on screen
+              but mean opposite things — only one of them is worth trying
+              again, so the card says which happened. */}
+          {photo.failed && (
+            <button
+              onClick={photo.retry}
+              className="mb-3 w-full rounded-lg border border-radar-panelborder py-2 font-mono text-[10px] tracking-widest text-radar-textdim"
+            >
+              PHOTO LOOKUP FAILED — TAP TO RETRY
+            </button>
+          )}
+          {photo.empty && (
+            <div className="mb-3 font-mono text-[9px] tracking-widest text-radar-textdim">
+              NO PHOTO ON FILE FOR THIS AIRFRAME
+            </div>
+          )}
+
           <div className="mb-3">
             <div className="mb-1 font-mono text-[10px] tracking-widest text-radar-textdim">AIRCRAFT</div>
             <div className="grid grid-cols-2 gap-2">
@@ -158,7 +175,7 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
             </div>
           </div>
 
-          {(aircraft.flightNumber || airline || routeLine) && (
+          {(aircraft.flightNumber || airline || routeLine || route.unconfirmed) && (
             <div className="mb-3">
               <div className="mb-1 font-mono text-[10px] tracking-widest text-radar-textdim">FLIGHT</div>
               <div className="grid grid-cols-2 gap-2">
@@ -166,6 +183,14 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
                 <Field label="Flight #" value={aircraft.flightNumber ?? null} />
                 <Field label="Route" value={routeLine} secondary={routeNames} />
               </div>
+              {/* Said out loud rather than left blank: the databases were asked
+                  and nothing they offered matched where this aircraft actually
+                  is. A route we can't stand behind isn't shown. */}
+              {route.unconfirmed && (
+                <div className="mt-1 font-mono text-[9px] tracking-widest text-radar-textdim">
+                  NO CONFIRMED ROUTE FOR THIS FLIGHT
+                </div>
+              )}
             </div>
           )}
 
