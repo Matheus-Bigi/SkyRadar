@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import type { Map as MapLibreMap } from "maplibre-gl";
 
@@ -27,6 +27,8 @@ import { useDeviceHeading } from "../hooks/useDeviceHeading";
 import { useAircraftData } from "../hooks/useAircraftData";
 import { useReverseGeocode } from "../hooks/useReverseGeocode";
 import { usePhotoPrefetch } from "../hooks/usePhotoPrefetch";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import { retryUnavailablePhotos } from "../lib/aircraft/photoClient";
 import { useAircraftStore } from "../store/useAircraftStore";
 import { useRadarStore } from "../store/useRadarStore";
 import { useSelectionStore } from "../store/useSelectionStore";
@@ -35,6 +37,9 @@ import { deriveGeometry, distanceMeters, feetToMeters, milesToMeters } from "../
 import { nearbyAirports } from "../lib/airports";
 import { primeAudio } from "../lib/audio/radarBeep";
 import { Aircraft } from "../lib/aircraft/types";
+
+/** How long a selected aircraft may be missing before the card lets go. */
+const SELECTION_GRACE_MS = 15_000;
 
 export default function SkyRadarApp() {
   const geo = useGeolocation(false);
@@ -50,12 +55,42 @@ export default function SkyRadarApp() {
   const [skyViewOpen, setSkyViewOpen] = useState(false);
   const [calibrationOpen, setCalibrationOpen] = useState(false);
 
-  useAircraftData(geo.position, radar.rangeMiles);
+  const refreshAircraftData = useAircraftData(geo.position, radar.rangeMiles);
   const placeName = useReverseGeocode(geo.position);
+  const [mapRetryNonce, setMapRetryNonce] = useState(0);
 
   // Warm the photos of the aircraft overhead the moment they appear, so
   // tapping one shows its picture straight away instead of starting a lookup.
   usePhotoPrefetch(aircraftStore.current, geo.position);
+
+  /**
+   * Quietly re-runs whatever failed earlier, at a moment nobody is looking.
+   *
+   * Things that fail once tend to stay failed for the life of a page: a
+   * photo lookup that gave up, a basemap that exhausted its fallbacks, a
+   * feed that stopped answering. Reloading fixes all of it, which is why
+   * reloading appeared to help — but it also means a blank screen, a
+   * re-acquired GPS fix and the loss of every photo already cached. This
+   * does the recovery without any of that.
+   */
+  const softRefresh = useCallback(() => {
+    retryUnavailablePhotos();
+    refreshAircraftData();
+    setMapRetryNonce((n) => n + 1);
+  }, [refreshAircraftData]);
+
+  // Anything the user is reading or tracking defers the cycle to a quieter
+  // moment — and recent touches count, so it never fires mid-gesture.
+  const busy =
+    Boolean(selection.selectedAircraftId) ||
+    selection.lookHereActive ||
+    skyViewOpen ||
+    settingsOpen ||
+    layersOpen ||
+    calibrationOpen ||
+    Boolean(selection.overlapChoices);
+
+  useAutoRefresh({ busy, onRefresh: softRefresh });
 
   // Derived directly from the data store (not from canvas rendering) so the
   // empty state stays correct even if the map's tiles are slow or fail to
@@ -74,6 +109,36 @@ export default function SkyRadarApp() {
     if (!selection.selectedAircraftId) return null;
     return aircraftStore.current.find((a) => a.id === selection.selectedAircraftId) ?? null;
   }, [selection.selectedAircraftId, aircraftStore]);
+
+  /*
+   * Drop a selection whose aircraft has genuinely gone.
+   *
+   * Without this the card simply vanished when an aircraft left range while
+   * selected — and worse, the stale id kept suppressing the CLEAR SKY
+   * message, leaving a completely blank scope with no explanation. Real
+   * feeds also drop an aircraft for a poll or two and bring it straight
+   * back, so this waits before letting go rather than dumping the card at
+   * the first gap.
+   */
+  const lastSeenRef = useRef<{ id: string; at: number } | null>(null);
+  useEffect(() => {
+    const id = selection.selectedAircraftId;
+    if (!id) {
+      lastSeenRef.current = null;
+      return;
+    }
+    const present = aircraftStore.current.some((a) => a.id === id);
+    const now = Date.now();
+    if (present || lastSeenRef.current?.id !== id) {
+      lastSeenRef.current = { id, at: now };
+      return;
+    }
+    if (now - lastSeenRef.current.at > SELECTION_GRACE_MS) {
+      selection.select(null);
+    }
+    // Re-checked on every snapshot, which is what `aircraftStore` changing means.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection.selectedAircraftId, aircraftStore.current, aircraftStore.currentAt]);
 
   const overlapAircraft = useMemo<Aircraft[]>(() => {
     if (!selection.overlapChoices) return [];
@@ -130,6 +195,7 @@ export default function SkyRadarApp() {
         lockCenter={radar.lockCenter}
         headingUpMode={prefs.headingUpMode}
         userHeading={heading.heading}
+        retryNonce={mapRetryNonce}
         onMapReady={setMapInstance}
       />
 

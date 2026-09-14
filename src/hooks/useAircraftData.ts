@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAircraftStore } from "../store/useAircraftStore";
 import { LatLon } from "../lib/geo";
 
@@ -17,6 +17,9 @@ export function useAircraftData(position: LatLon | null, rangeMiles: number) {
   const applySnapshot = useAircraftStore((s) => s.applySnapshot);
   const setStatus = useAircraftStore((s) => s.setStatus);
   const failuresRef = useRef(0);
+  // Lets the caller bring the next poll forward — used by the idle refresh
+  // cycle, so recovering from an outage doesn't wait out the interval.
+  const pollNowRef = useRef<(() => void) | null>(null);
 
   // Snap to ~110m before this drives any fetching. `watchPosition` reports
   // constant small GPS jitter, and keying the poll loop off raw coordinates
@@ -64,12 +67,19 @@ export function useAircraftData(position: LatLon | null, rangeMiles: number) {
       }
     };
 
+    pollNowRef.current = () => {
+      if (timer) clearTimeout(timer);
+      void poll();
+    };
     poll();
 
     return () => {
       cancelled = true;
+      pollNowRef.current = null;
       if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lon, rangeMiles]);
+
+  return useCallback(() => pollNowRef.current?.(), []);
 }
