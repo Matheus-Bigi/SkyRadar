@@ -381,6 +381,32 @@ throw them off further. Two things address that:
   heading, with nudge buttons to line the radar up with what's actually out
   the window. The offset persists.
 
+### Deciding the compass is unsteady
+
+Sky View can say the compass looks off. Getting that judgement right matters
+more than it sounds, because a notice that is wrong is worse than no notice —
+it tells someone their working instrument is broken.
+
+- **A negative accuracy reading is "no opinion", not "bad".** iOS reports
+  `webkitCompassAccuracy` of `-1` when it cannot say, and plenty of iPads
+  report that for a whole session while pointing perfectly straight. Reading
+  it as a fault pinned the notice on permanently. Only an actual figure,
+  above 35°, counts as a poor fix.
+- **Turning the device is not the compass misbehaving.** Steadiness is judged
+  from the movement that *isn't* going anywhere: over a short window, a
+  deliberate turn is sustained in one direction and survives the average,
+  while sensor noise alternates and cancels out of it. Subtracting the turn
+  leaves the wander. Measuring plain movement instead made the notice
+  self-defeating — it asked for a figure-eight, and performing one was
+  exactly what kept it on screen.
+- **It can clear, not only appear.** The old check could raise the flag and
+  never lower it. It now raises above 8° of wander and clears below 4°, two
+  thresholds so it cannot flicker around one.
+- **It can be acknowledged.** A **GOT IT** on the notice dismisses it. It
+  stays dismissed until the compass actually settles, and is then free to
+  speak up again if things slip — acknowledging is not the same as switching
+  it off for good.
+
 ## The control rail
 
 Every control on the radar page lives in one rail down the right-hand side.
