@@ -13,8 +13,8 @@ export default function TopBar({
   const live = status === "ready";
   return (
     <div className="pointer-events-none flex items-start justify-between">
-      <div className="pointer-events-auto rounded-lg border border-radar-panelborder bg-radar-panel/70 px-3 py-1.5 backdrop-blur-sm">
-        <span className="font-mono text-xs font-semibold tracking-[0.2em] text-radar-text">SKYRADAR</span>
+      <div className="pointer-events-auto rounded-lg border border-radar-panelborder bg-radar-panel/70 px-3.5 py-2 backdrop-blur-sm">
+        <span className="font-mono text-sm font-semibold tracking-[0.2em] text-radar-text">SKYRADAR</span>
       </div>
 
       <div className="flex items-center gap-2">
