@@ -50,7 +50,7 @@ controls; there is intentionally no second screen.
 ```
 LocationManager      → useGeolocation (src/hooks)
 HeadingManager        → useDeviceHeading (compass, iOS permission handling)
-MotionManager         → useDeviceMotion / useDevicePitch (gyro/accelerometer)
+MotionManager         → useDeviceMotion / useDeviceAttitude (pitch + roll)
 AircraftDataProvider  → src/lib/aircraft/providers (FR24 | simulator)
 AircraftClassifier    → src/lib/aircraft/classify.ts
 AircraftPositionEngine→ src/lib/geo.ts (distance/bearing/relative bearing/elevation)
@@ -60,7 +60,10 @@ AircraftRenderer      → src/components/RadarCanvas.tsx (single canvas: map
 MapRenderer           → src/components/MapView.tsx (MapLibre GL, dark style)
 AircraftDetailCard    → src/components/AircraftCard.tsx
 LookHereEngine        → src/components/LookHereOverlay.tsx
-SkyViewEngine         → src/components/SkyView.tsx (camera + AR overlay)
+SkyViewEngine         → src/components/SkyView.tsx (camera + guidance)
+                        src/components/SkyViewCanvas.tsx (the HUD)
+                        src/lib/ar/projection.ts (sky → screen)
+                        src/lib/ar/attitude.ts (sensor angles → pitch/roll)
 LayerManager /
 SettingsManager       → src/store/usePreferencesStore.ts (persisted)
 ```
@@ -378,6 +381,74 @@ throw them off further. Two things address that:
   heading, with nudge buttons to line the radar up with what's actually out
   the window. The offset persists.
 
+## Sky View
+
+Hold the device up, follow the guidance, find the aeroplane. The whole mode
+rests on one decision: **it points at an area, never at a dot.**
+
+A tablet compass is several degrees out on a good day, and an airliner has
+moved a few hundred metres since the position now on screen was measured. A
+tight reticle would claim a precision nobody has — and it would be wrong in
+the most annoying way, confidently. So Sky View marks a patch of sky, says
+how far to turn and tilt to bring it into view, and leaves the last step to
+the eyes, which are far better at it than any marker.
+
+**How big the patch is.** `searchRadiusDeg()` in `src/lib/ar/projection.ts`
+combines two real errors — the compass's own (8° by default) and how far the
+aircraft has flown since its last report (its ground speed times the age of
+the data, as an angle at that distance) — and takes the root of the sum of
+squares, clamped to 5–45°. A fast jet on stale data gets a wide circle; a
+helicopter a mile away on a fresh report gets a tight one. The circle is
+honest about the uncertainty rather than hiding it.
+
+**Where the sky maps onto the screen.** The aircraft's bearing and elevation
+become a unit vector in east/north/up; the device's heading and pitch give a
+camera basis; a pinhole projection with `focal = (width/2) / tan(hfov/2)`
+turns that into a pixel, and roll rotates the result into the screen's frame.
+A target behind you is reported as such rather than projected to a nonsense
+point. The camera's field of view is an estimate (63°) because cameras don't
+report it — the search area is wide enough that a few degrees either way
+changes nothing.
+
+**Which way to turn.** The guidance bar gives one instruction per axis:
+`TURN LEFT 40° · LOOK UP 25°`. When an axis rounds to zero it says `ON
+BEARING` / `ON ELEVATION` instead — "TURN LEFT 0°" is a direction that isn't
+one. More than 150° off and it simply says the aircraft is behind you, which
+is more use than a number.
+
+**When the target is off screen** a solid arrow slides out from the aim point
+in the target's true direction, labelled with the callsign and how far off
+aim it is. Aircraft are usually *above* you, so this is the ordinary case,
+not the exotic one. The arrow is confined to the band of screen that is
+actually visible: the HUD is painted underneath the top bar and the target
+card, and an arrow drawn in those bands — as the "it's below you" arrow once
+was — is an arrow nobody sees. That band is measured from the live card
+rather than assumed, because the card grows with the aircraft it describes.
+
+**Silhouettes are drawn nose-up**, deliberately not rotated by the aircraft's
+track. In the sky you are looking at a three-dimensional object from an
+arbitrary angle; rotating the icon would be a claim about its attitude from
+where you stand, which the data does not support. (On the radar plot, where
+you are looking at a plan view, the silhouette *is* rotated — see
+[Heading-up](#heading-up).)
+
+**Labels get out of each other's way.** On a busy afternoon half a dozen
+aircraft sit within a few degrees of each other. Labels are placed after
+every silhouette is down: the chosen target first, which always keeps its
+label, then the rest nearest-first, each taking the first of four placements
+(below, above, right, left) that collides with nothing already drawn. A label
+with nowhere to go is dropped — the silhouette still speaks for itself, and
+one readable box beats three stacked on the same patch of sky. Only the
+target gets a search ring, for the same reason.
+
+**The pitch ladder turns with the world; its numbers stay upright.** The
+ladder is an artificial horizon and belongs to the sky, but text that rolls
+over with the device is text nobody can read at a glance.
+
+Everything on the HUD carries a dark halo (`shadowBlur` on a near-black
+shadow) because in daylight the camera image is close to white, and a white
+HUD on a white sky is no HUD at all.
+
 ## The entry screen
 
 Before any permission is granted there is nothing real to show, so the screen
@@ -442,8 +513,15 @@ device — they're used purely as an AR background.
   cannot see through clouds, buildings, or terrain. It shows where an
   aircraft's position and altitude place it relative to your current
   heading, approximated from the device's compass and orientation sensors.
-- The elevation/"look up" angle and Sky View marker placement are practical
-  approximations (see `src/lib/geo.ts`), not precision instruments.
+- The size of the Sky View search area is a calculated estimate of the error,
+  not a guarantee. It accounts for the compass and for how stale the position
+  is; it does not account for a miscalibrated device, magnetic interference
+  from a car or a case, or an aircraft that manoeuvred since its last report.
+  Tap the compass dial on the radar page to correct a known offset.
+- The camera's field of view is assumed to be 63° horizontal. Browsers do not
+  report the real figure, so on a device with a notably wider or narrower
+  lens the marked area will be slightly the wrong size — by less than the
+  search radius itself, which is why the mode points at an area.
 - `npm audit` currently flags advisories against Next.js/`eslint-config-next`
   and a nested `glob`. Nearly all of them concern features this app doesn't
   use (Server Actions, i18n Middleware, custom servers, the Image
