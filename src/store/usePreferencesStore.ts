@@ -33,6 +33,14 @@ export interface Preferences {
   arLabelsEnabled: boolean;
   arDistanceDisplay: boolean;
 
+  /**
+   * Whether the right-hand control rail is tucked away. On a phone the rail
+   * is a quarter of the screen's width, and the map underneath it is the
+   * point of the app — so it folds out of the way and stays that way until
+   * it is asked back.
+   */
+  controlRailCollapsed: boolean;
+
   // Appearance
   appearance: "dark" | "system";
 }
@@ -52,6 +60,8 @@ const defaults: Preferences = {
 
   arLabelsEnabled: true,
   arDistanceDisplay: true,
+
+  controlRailCollapsed: false,
 
   appearance: "dark",
 };
