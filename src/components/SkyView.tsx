@@ -317,9 +317,25 @@ export default function SkyView({
         </div>
       )}
 
+      {/*
+        Worth saying once, not worth nagging about — the heading may well be
+        fine, and the reader can see for themselves whether the sky lines up.
+        The container stays transparent to taps so an aircraft behind it can
+        still be selected; only the button takes them.
+      */}
       {heading.needsCalibration && (
-        <div className="pointer-events-none absolute inset-x-6 top-32 rounded-lg bg-black/70 px-4 py-2 text-center font-mono text-[10px] text-white/85">
-          Move the device in a figure-eight to settle the compass.
+        <div className="pointer-events-none absolute inset-x-6 top-32 z-10 flex items-center justify-center gap-3 rounded-lg bg-black/70 px-4 py-2 font-mono text-[10px] text-white/85">
+          <span>Compass may be off — a figure-eight usually settles it.</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              heading.acknowledgeCalibration();
+            }}
+            aria-label="Dismiss compass notice"
+            className="pointer-events-auto shrink-0 rounded border border-white/25 px-2 py-0.5 tracking-widest text-white/70 hover:text-white"
+          >
+            GOT IT
+          </button>
         </div>
       )}
 
