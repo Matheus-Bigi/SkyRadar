@@ -50,6 +50,17 @@ const BATCH_CONCURRENCY = 4;
 
 const USER_AGENT = "SkyRadar/1.0 (personal aviation radar; non-commercial)";
 
+/**
+ * Upstream bases, overridable so the whole photo path — including the API
+ * route's own request parsing — can be exercised end to end against a local
+ * stand-in. Mocking at the browser boundary hides bugs in exactly the layer
+ * most likely to have them.
+ */
+const PLANESPOTTERS_BASE =
+  process.env.PLANESPOTTERS_API_BASE_URL || "https://api.planespotters.net";
+const AIRPORT_DATA_BASE =
+  process.env.AIRPORT_DATA_API_BASE_URL || "https://api.airport-data.com";
+
 export interface PhotoQuery {
   /** ICAO 24-bit address, e.g. "a1b2c3" — broadcast by the aircraft itself. */
   icao24?: string;
@@ -82,28 +93,28 @@ function sourceTiers(icao24?: string, registration?: string): PhotoSource[][] {
   if (hex) {
     planespotters.push({
       id: `planespotters:hex:${hex}`,
-      url: `https://api.planespotters.net/pub/photos/hex/${encodeURIComponent(hex)}`,
+      url: `${PLANESPOTTERS_BASE}/pub/photos/hex/${encodeURIComponent(hex)}`,
       parse: parsePlanespotters,
     });
   }
   if (registration) {
     planespotters.push({
       id: `planespotters:reg:${registration}`,
-      url: `https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(registration)}`,
+      url: `${PLANESPOTTERS_BASE}/pub/photos/reg/${encodeURIComponent(registration)}`,
       parse: parsePlanespotters,
     });
   }
   if (icao24) {
     airportData.push({
       id: `airport-data:hex:${icao24}`,
-      url: `https://api.airport-data.com/api/ac_thumb.json?m=${encodeURIComponent(icao24)}&n=1`,
+      url: `${AIRPORT_DATA_BASE}/api/ac_thumb.json?m=${encodeURIComponent(icao24)}&n=1`,
       parse: parseAirportData,
     });
   }
   if (registration) {
     airportData.push({
       id: `airport-data:reg:${registration}`,
-      url: `https://api.airport-data.com/api/ac_thumb.json?r=${encodeURIComponent(registration)}&n=1`,
+      url: `${AIRPORT_DATA_BASE}/api/ac_thumb.json?r=${encodeURIComponent(registration)}&n=1`,
       parse: parseAirportData,
     });
   }
@@ -116,13 +127,16 @@ function sourcesFor(icao24?: string, registration?: string): PhotoSource[] {
   return sourceTiers(icao24, registration).flat();
 }
 
-export async function lookupAircraftPhoto(query: PhotoQuery): Promise<AircraftPhoto> {
+export async function lookupAircraftPhoto(
+  query: PhotoQuery,
+  options: { refresh?: boolean } = {}
+): Promise<AircraftPhoto> {
   const icao24 = normalize(query.icao24);
   const registration = normalize(query.registration);
 
   for (const tier of sourceTiers(icao24, registration)) {
     // Every source in the tier at once: the whole tier costs one round trip.
-    const results = await Promise.all(tier.map((source) => resolve(source)));
+    const results = await Promise.all(tier.map((source) => resolve(source, options.refresh)));
     // Preference within a tier still follows source order (hex before
     // registration), regardless of which answered first.
     const hit = results.find((photo) => photo?.imageUrl);
@@ -133,9 +147,11 @@ export async function lookupAircraftPhoto(query: PhotoQuery): Promise<AircraftPh
 }
 
 /** One source, with its cache, its retry, and its failures swallowed. */
-async function resolve(source: PhotoSource): Promise<AircraftPhoto | null> {
+async function resolve(source: PhotoSource, refresh = false): Promise<AircraftPhoto | null> {
   const cached = cache.get(source.id);
-  if (cached && cached.expiresAt > Date.now()) return stripExpiry(cached);
+  // A retry must actually retry. Answering a later round from the cached
+  // miss of an earlier one just asks the same cache the same question.
+  if (!refresh && cached && cached.expiresAt > Date.now()) return stripExpiry(cached);
 
   try {
     const photo = await fetchWithRetry(source);
@@ -157,7 +173,8 @@ async function resolve(source: PhotoSource): Promise<AircraftPhoto | null> {
  * traffic should not arrive as one burst.
  */
 export async function lookupAircraftPhotos(
-  queries: Array<PhotoQuery & { key: string }>
+  queries: Array<PhotoQuery & { key: string }>,
+  options: { refresh?: boolean } = {}
 ): Promise<Record<string, AircraftPhoto>> {
   const out: Record<string, AircraftPhoto> = {};
   const queue = [...queries];
@@ -166,7 +183,7 @@ export async function lookupAircraftPhotos(
     for (;;) {
       const next = queue.shift();
       if (!next) return;
-      out[next.key] = await lookupAircraftPhoto(next);
+      out[next.key] = await lookupAircraftPhoto(next, options);
     }
   });
 

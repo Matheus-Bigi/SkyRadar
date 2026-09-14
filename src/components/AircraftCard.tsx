@@ -79,14 +79,28 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
           <button onClick={onClose} aria-label="Close" className="text-radar-textdim hover:text-radar-text">
             ✕
           </button>
-          {photo.imageUrl && (
-            // A photo of this exact airframe, not a stock shot of the type.
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={photo.imageUrl}
-              alt={`${aircraft.registration ?? aircraft.aircraftModel ?? "Aircraft"} photo`}
-              className="h-11 w-16 rounded border border-radar-panelborder object-cover"
-            />
+          {/* The frame is always there once a photo is possible, so the card
+              doesn't jump when one arrives — and a sweeping mark inside it
+              says a picture is coming rather than leaving a blank space that
+              looks like a bug. */}
+          {!photo.unavailable && (
+            <div className="flex h-11 w-16 items-center justify-center overflow-hidden rounded border border-radar-panelborder bg-black/30">
+              {photo.imageUrl ? (
+                // A photo of this exact airframe, not a stock shot of the type.
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={photo.imageUrl}
+                  alt={`${aircraft.registration ?? aircraft.aircraftModel ?? "Aircraft"} photo`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span
+                  className="photo-spinner h-4 w-4"
+                  role="status"
+                  aria-label="Loading aircraft photo"
+                />
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -115,7 +129,7 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
 
       {expanded && (
         <div className="max-h-[45vh] overflow-y-auto border-t border-radar-panelborder p-3">
-          {photo.imageUrl && (
+          {photo.imageUrl ? (
             <div className="mb-3 overflow-hidden rounded-lg border border-radar-panelborder">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={photo.imageUrl} alt={`${aircraft.aircraftModel ?? "Aircraft"} photo`} className="w-full object-cover" />
@@ -123,22 +137,25 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
                 <div className="bg-black/40 px-2 py-1 text-[9px] text-radar-textdim">{photo.attribution}</div>
               )}
             </div>
-          )}
-
-          {/* "No photo on file" and "the lookup broke" look the same on screen
-              but mean opposite things — only one of them is worth trying
-              again, so the card says which happened. */}
-          {photo.failed && (
-            <button
-              onClick={photo.retry}
-              className="mb-3 w-full rounded-lg border border-radar-panelborder py-2 font-mono text-[10px] tracking-widest text-radar-textdim"
-            >
-              PHOTO LOOKUP FAILED — TAP TO RETRY
-            </button>
-          )}
-          {photo.empty && (
-            <div className="mb-3 font-mono text-[9px] tracking-widest text-radar-textdim">
-              NO PHOTO ON FILE FOR THIS AIRFRAME
+          ) : photo.pending ? (
+            <div className="mb-3 flex h-32 flex-col items-center justify-center gap-2 rounded-lg border border-radar-panelborder bg-black/20">
+              <span className="photo-spinner h-6 w-6" role="status" aria-label="Loading aircraft photo" />
+              <span className="font-mono text-[9px] tracking-widest text-radar-textdim">
+                LOOKING FOR A PHOTO
+              </span>
+            </div>
+          ) : (
+            // Only after every source has been asked, several rounds apart.
+            <div className="mb-3 flex h-16 items-center justify-center gap-3 rounded-lg border border-dashed border-radar-panelborder">
+              <span className="font-mono text-[9px] tracking-widest text-radar-textdim">
+                NO PHOTO AVAILABLE
+              </span>
+              <button
+                onClick={photo.retry}
+                className="rounded border border-radar-panelborder px-2 py-1 font-mono text-[9px] tracking-widest text-radar-textdim"
+              >
+                RETRY
+              </button>
             </div>
           )}
 

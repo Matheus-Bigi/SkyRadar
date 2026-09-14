@@ -1,89 +1,60 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CachedPhoto, cachedPhoto, photoKey, requestPhoto } from "../lib/aircraft/photoClient";
+import {
+  PHOTO_PRIORITY,
+  PhotoStatus,
+  photoKey,
+  photoState,
+  requestPhoto,
+  retryPhoto,
+  subscribe,
+} from "../lib/aircraft/photoClient";
 
 export interface PhotoResult {
   imageUrl: string | null;
   attribution: string | null;
-  loading: boolean;
-  /** The lookup ran and came back with nothing — this airframe has no photo. */
-  empty: boolean;
-  /** The lookup itself failed (offline, timeout, upstream error) — retryable. */
-  failed: boolean;
+  /** Still being looked for — show the frame and the spinner. */
+  pending: boolean;
+  /** Every source, several rounds: there is no photo of this airframe. */
+  unavailable: boolean;
   retry: () => void;
-}
-
-const IDLE = { imageUrl: null, attribution: null, loading: false, empty: false, failed: false };
-
-function fromCache(key: string) {
-  const hit: CachedPhoto | undefined = key === "|" ? undefined : cachedPhoto(key);
-  if (!hit) return null;
-  return { ...hit, loading: false, empty: !hit.imageUrl, failed: false };
 }
 
 /**
  * The photo of one specific airframe.
  *
- * Both identifiers are passed through: the ICAO 24-bit address is broadcast
- * by every aircraft, so it finds a photo even when the feed couldn't resolve
- * a registration.
+ * Selecting an aircraft promotes it to the front of the prefetch queue, so
+ * even an aircraft the queue hadn't reached yet is fetched immediately — and
+ * one it already reached is simply there, with no request at all.
  *
- * Anything already in the browser cache — very often the case, because the
- * radar warms the photos of nearby aircraft as they appear — is returned on
- * the first render with no request and no loading flash.
- *
- * "No photo exists" and "the lookup failed" are tracked separately. They
- * look identical on screen but mean opposite things: one is final, the other
- * is worth retrying, and collapsing them is how a blip becomes a card that
- * quietly never shows a picture.
+ * `pending` stays true across every retry round, so the card can keep showing
+ * that a photo is on its way. Only once the queue has exhausted its rounds
+ * does `unavailable` become true and the card say so.
  */
 export function useAircraftPhoto(
   icao24: string | undefined,
   registration: string | undefined
 ): PhotoResult {
   const key = photoKey(icao24, registration);
-  // Seeded straight from the cache so an already-known photo paints on the
-  // very first render rather than after a round trip.
-  const [state, setState] = useState(() => fromCache(key) ?? IDLE);
-  const [attempt, setAttempt] = useState(0);
-
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  const [state, setState] = useState(() => photoState(key));
 
   useEffect(() => {
-    if (key === "|") {
-      setState(IDLE);
-      return;
-    }
+    if (key === "|") return;
+    // Subscribe before requesting, so a synchronous cache hit isn't missed.
+    const unsubscribe = subscribe(key, setState);
+    setState(requestPhoto(key, PHOTO_PRIORITY.SELECTED));
+    return unsubscribe;
+  }, [key]);
 
-    const known = fromCache(key);
-    if (known && attempt === 0) {
-      setState(known);
-      return;
-    }
+  const retry = useCallback(() => retryPhoto(key), [key]);
 
-    let cancelled = false;
-    setState({ ...IDLE, loading: true });
-
-    requestPhoto(key).then((photo) => {
-      if (cancelled) return;
-      if (!photo) {
-        setState({ ...IDLE, failed: true });
-        return;
-      }
-      setState({
-        imageUrl: photo.imageUrl,
-        attribution: photo.attribution,
-        loading: false,
-        empty: !photo.imageUrl,
-        failed: false,
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [key, attempt]);
-
-  return { ...state, retry };
+  const status: PhotoStatus = key === "|" ? "unavailable" : state.status;
+  return {
+    imageUrl: state.imageUrl,
+    attribution: state.attribution,
+    pending: status === "pending" || status === "idle",
+    unavailable: status === "unavailable",
+    retry,
+  };
 }

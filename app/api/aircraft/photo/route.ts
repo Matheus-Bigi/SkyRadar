@@ -44,7 +44,9 @@ export async function GET(req: NextRequest) {
     return { key, icao24: hex || undefined, registration: registration || undefined };
   });
 
-  const resolved = await lookupAircraftPhotos(queries);
+  // A client on a later retry round explicitly wants the caches skipped.
+  const refresh = searchParams.get("refresh") === "1";
+  const resolved = await lookupAircraftPhotos(queries, { refresh });
 
   const photos: Record<string, { imageUrl: string | null; attribution: string | null }> = {};
   for (const { key } of queries) {
@@ -52,10 +54,22 @@ export async function GET(req: NextRequest) {
     photos[key] = { imageUrl: photo.imageUrl ?? null, attribution: photo.attribution ?? null };
   }
 
-  // A photo of a given airframe doesn't change minute to minute, so let the
-  // CDN and the browser hold it — the fastest lookup is the one not made.
+  // A photo of a given airframe doesn't change minute to minute, so a
+  // successful answer is worth letting the CDN hold.
+  //
+  // An answer with *nothing* in it is a different matter: an upstream having
+  // a bad moment looks exactly like "no photos exist", and caching that for
+  // an hour would freeze one bad moment into an hour of blank cards for
+  // everyone. Empty answers are never cached.
+  const foundAny = Object.values(photos).some((p) => p.imageUrl);
   return NextResponse.json(
     { photos },
-    { headers: { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" } }
+    {
+      headers: {
+        "Cache-Control": foundAny
+          ? "public, max-age=3600, stale-while-revalidate=86400"
+          : "no-store",
+      },
+    }
   );
 }
