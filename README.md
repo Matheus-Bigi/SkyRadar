@@ -368,6 +368,19 @@ was the obvious approach and it was wrong twice: it swallowed the traffic,
 and at these near-black values the gradient banded into visible rings.
 Fading per contact leaves the background perfectly flat.
 
+**Keeping three or four in view is a budget, not a count.** Plenty of
+contacts are invisible at any moment — fading in at an edge, or crossing the
+clear zone behind the logo — so capping the number *aloft* was the wrong
+control: on a phone, where the content covers most of the width, the pool
+filled with contacts stuck in the dimmed middle, the cap was reached, and
+nothing new could spawn. The screen sat empty with nine aircraft in the air.
+The budget now counts what can actually be seen, at the opacity a contact
+actually reads at, and tops up when it runs short. Arrivals also pick an
+entry point where they will be visible, rather than one that dooms them to
+cross dimmed. A phone gets a lower floor on purpose: forcing four into the
+narrow bands above and below its content would crowd the screen rather than
+improve it.
+
 With `prefers-reduced-motion`, the traffic holds still as a composed tableau
 rather than disappearing — the screen stays populated, nothing moves.
 
