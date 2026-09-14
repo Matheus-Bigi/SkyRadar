@@ -268,6 +268,32 @@ deliberately separate from the `Owner/Operator` field, which is the
 airframe's registered owner and is often a leasing company or a regional
 partner flying under a mainline callsign.
 
+## Recovering without a reload
+
+Some failures are permanent for the life of a page: a photo lookup that gave
+up, a basemap that exhausted its fallback chain, a feed that stopped
+answering. Reloading clears all of them — which is why reloading appeared to
+fix missing photos — but a reload is a blank screen, a re-acquired GPS fix, a
+re-initialised map, and the loss of every photo already cached.
+
+So SkyRadar re-runs just the parts that failed. About once a minute it
+retries the photos it had given up on, brings the next aircraft poll forward,
+and restarts the basemap chain if no tile ever arrived. Nothing that already
+works is touched, and nothing flashes.
+
+The cycle never fires while the app is in use. An open card, a tracked
+aircraft, an open panel, or a touch in the last few seconds all count as
+busy, and a refresh that came due during any of that simply waits for a quiet
+moment. Returning to a backgrounded tab counts as a good moment to refresh,
+since a sleeping tab has not really been idle.
+
+**An outage clears the scope.** When the feed stops answering, the aircraft
+are removed rather than left on screen. Positions are interpolated forward
+between polls, so a stale snapshot didn't just sit there — it kept *moving*,
+drawing aircraft on dead reckoning from a position nobody had confirmed in
+minutes. An empty scope under a "LIVE DATA UNAVAILABLE" banner is the honest
+picture.
+
 ## The basemap
 
 The background map is deliberately **raster**, not vector, and its style is

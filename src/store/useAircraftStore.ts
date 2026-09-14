@@ -72,5 +72,29 @@ export const useAircraftStore = create<AircraftStore>()((set, get) => ({
     });
   },
 
-  setStatus: (status, error) => set({ status, error }),
+  setStatus: (status, error) =>
+    set((state) => {
+      // Going offline has to clear the scope, not just change a banner.
+      //
+      // Leaving the last snapshot in place meant aircraft kept being drawn
+      // — and, because positions are interpolated forward between polls,
+      // kept *moving* on dead reckoning — long after the feed stopped
+      // answering. A marker gliding across the map from a position nobody
+      // has confirmed in minutes is exactly the thing this app promises
+      // never to show. An empty scope under a "LIVE DATA UNAVAILABLE"
+      // banner is the honest picture.
+      if (status === "offline" && state.current.length > 0) {
+        return {
+          status,
+          error,
+          previous: [],
+          current: [],
+          previousAt: 0,
+          currentAt: 0,
+          trails: {},
+          removed: {},
+        };
+      }
+      return { status, error };
+    }),
 }));

@@ -310,6 +310,33 @@ async function runBatch(batch: Entry[], alreadyCounted = false) {
   }
 }
 
+/**
+ * Gives every airframe we'd given up on another go.
+ *
+ * This is what a page refresh was really doing: an aircraft marked
+ * unavailable stayed that way for the life of the page, so reloading was the
+ * only way to ask again — and it threw away every good photo in the cache to
+ * do it. Sweeping just the failures keeps everything already found.
+ *
+ * Returns how many were re-queued.
+ */
+export function retryUnavailablePhotos(): number {
+  let count = 0;
+  for (const entry of entries.values()) {
+    if (entry.status !== "unavailable") continue;
+    entry.status = "pending";
+    entry.attempts = 0;
+    entry.nextAttemptAt = 0;
+    count += 1;
+    emit(entry);
+  }
+  // A fresh sweep is also a fair moment to re-test the direct route: whatever
+  // closed it may have been temporary.
+  if (count > 0) directBlocked = false;
+  if (count > 0) pump();
+  return count;
+}
+
 /** Test seam. */
 export function __resetPhotoClient() {
   entries.clear();

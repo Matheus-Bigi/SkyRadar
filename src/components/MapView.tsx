@@ -138,6 +138,12 @@ export interface MapViewProps {
   lockCenter: boolean;
   headingUpMode: boolean;
   userHeading: number | null;
+  /**
+   * Bumped by the idle refresh cycle. A basemap that exhausted the whole
+   * fallback chain stays dead for the life of the page otherwise — and
+   * whatever stopped the tiles arriving is usually long over by then.
+   */
+  retryNonce?: number;
   onMapReady: (map: MapLibreMap) => void;
 }
 
@@ -147,6 +153,7 @@ export default function MapView({
   lockCenter,
   headingUpMode,
   userHeading,
+  retryNonce = 0,
   onMapReady,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +162,7 @@ export default function MapView({
   const tileLoadedRef = useRef(false);
   const tileErrorsRef = useRef(0);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryBasemapRef = useRef<(() => void) | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -180,6 +188,12 @@ export default function MapView({
     const clearWatchdog = () => {
       if (watchdogRef.current) clearTimeout(watchdogRef.current);
       watchdogRef.current = null;
+    };
+
+    // Exposed so the idle refresh cycle can restart a dead chain.
+    retryBasemapRef.current = () => {
+      if (tileLoadedRef.current) return;
+      switchBasemap(0, "retrying");
     };
 
     const switchBasemap = (index: number, reason: string) => {
@@ -239,6 +253,13 @@ export default function MapView({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Start the basemap chain over when the refresh cycle says to — but only
+  // if no tile ever arrived, so a working map is never disturbed.
+  useEffect(() => {
+    if (retryNonce === 0) return;
+    retryBasemapRef.current?.();
+  }, [retryNonce]);
 
   // Keep the map centered + scaled to the selected range whenever locked.
   useEffect(() => {
