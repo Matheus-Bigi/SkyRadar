@@ -9,7 +9,7 @@
  * until you actually go outside and look.
  */
 
-import { toDeg, toRad } from "../geo";
+import { feetToMeters, knotsToMps, normalizeDegrees, toDeg, toRad } from "../geo";
 
 export interface Vec3 {
   x: number; // east
@@ -166,4 +166,97 @@ export function searchRadiusDeg(opts: {
 /** Shortest signed turn, in degrees, from one bearing to another. */
 export function turnToward(fromDeg: number, toDeg_: number): number {
   return ((((toDeg_ - fromDeg) % 360) + 540) % 360) - 180;
+}
+
+/** What the feed says the aircraft is doing. Any of it may be missing. */
+export interface Motion {
+  /** True track, degrees, 0 = north. */
+  trackDeg?: number;
+  groundSpeedKt?: number;
+  verticalSpeedFpm?: number;
+}
+
+/**
+ * Where the aircraft is relative to the observer, in east/north/up metres,
+ * rebuilt from the ground distance and elevation the geometry already gives.
+ */
+export function relativePosition(target: SkyTarget, groundDistanceMeters: number): Vec3 {
+  const az = toRad(target.azimuthDeg);
+  return {
+    x: Math.sin(az) * groundDistanceMeters,
+    y: Math.cos(az) * groundDistanceMeters,
+    z: Math.tan(toRad(target.elevationDeg)) * groundDistanceMeters,
+  };
+}
+
+/** Enough apparent movement to be sure which way it is going, in pixels. */
+const MIN_APPARENT_PIXELS = 1.5;
+/** The step ahead is scaled to this fraction of the range, so the chord stays close to the tangent. */
+const LOOK_AHEAD_FRACTION = 0.08;
+const MIN_LOOK_AHEAD_S = 0.05;
+const MAX_LOOK_AHEAD_S = 3;
+
+/**
+ * Which way the aircraft appears to be travelling, as an angle on the screen:
+ * 0 points up the screen, 90 to the right. Null when the data doesn't say, or
+ * when it is coming straight at you or heading straight away — then it barely
+ * moves across the view at all and any angle would be invention.
+ *
+ * This is the *apparent* direction, which is the honest thing to draw. Take an
+ * aircraft climbing away to the north: on screen it slides down towards the
+ * horizon, because its elevation is falling even as its altitude rises. Point
+ * the icon along its compass track instead and it would be drawn climbing up
+ * the screen while visibly sinking — which is the complaint that prompted
+ * this, in reverse.
+ *
+ * Found by asking where the aircraft will appear a moment from now and taking
+ * the direction of the step. Doing it through the same projection as the
+ * marker itself means perspective, roll and the camera's aim are all
+ * accounted for without repeating any of that arithmetic.
+ */
+export function apparentTrackDeg(
+  target: SkyTarget,
+  groundDistanceMeters: number,
+  motion: Motion,
+  attitude: Attitude,
+  viewport: Viewport
+): number | null {
+  const { trackDeg, groundSpeedKt, verticalSpeedFpm } = motion;
+  if (trackDeg === undefined || !Number.isFinite(trackDeg)) return null;
+
+  const speed = knotsToMps(groundSpeedKt ?? 0);
+  const climb = feetToMeters(verticalSpeedFpm ?? 0) / 60;
+  const pace = Math.hypot(speed, climb);
+  if (pace < 0.5) return null;
+
+  const here = relativePosition(target, groundDistanceMeters);
+  const range = Math.hypot(here.x, here.y, here.z);
+  if (range < 1) return null;
+
+  const track = toRad(trackDeg);
+  const seconds = Math.min(
+    MAX_LOOK_AHEAD_S,
+    Math.max(MIN_LOOK_AHEAD_S, (LOOK_AHEAD_FRACTION * range) / pace)
+  );
+  const soon: Vec3 = {
+    x: here.x + Math.sin(track) * speed * seconds,
+    y: here.y + Math.cos(track) * speed * seconds,
+    z: here.z + climb * seconds,
+  };
+
+  const ahead: SkyTarget = {
+    azimuthDeg: toDeg(Math.atan2(soon.x, soon.y)),
+    elevationDeg: toDeg(Math.atan2(soon.z, Math.hypot(soon.x, soon.y))),
+  };
+
+  const from = projectSky(target, attitude, viewport);
+  const to = projectSky(ahead, attitude, viewport);
+  if (from.behind || to.behind) return null;
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.hypot(dx, dy) < MIN_APPARENT_PIXELS) return null;
+
+  // Screen y grows downwards, so "up the screen" is -y.
+  return normalizeDegrees(toDeg(Math.atan2(dx, -dy)));
 }
