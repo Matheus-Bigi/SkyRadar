@@ -533,6 +533,22 @@ angle between them barely changes.
 rotated by the track itself — see [Heading-up](#heading-up). That path is
 untouched by this.)
 
+**Choosing an aircraft, and letting one go.** Sky View opens on something
+useful — whatever was chosen on the radar, or the nearest aircraft if nothing
+was. That opening pick is made once, on the way in. Making it every time the
+selection emptied was what stopped anyone letting go of an aircraft at all:
+the tap cleared it and the effect immediately chose another.
+
+Tapping empty sky lets the current aircraft go, and so does tapping the one
+already being followed — the same gesture the radar uses. What is left is a
+sky with nothing singled out: no search ring, no guidance, and the card's
+whole band handed back to the view, with one line saying how to start
+following something again. Every aircraft is then drawn on the same terms,
+so the distance cue below does all the talking.
+
+Leaving Sky View and coming back makes a fresh opening pick, because that is
+a new visit rather than a continuation of the old one.
+
 **Distance is drawn, not just written.** An aircraft thirty miles off used to
 be drawn exactly as loudly as one overhead. Both are real and both belong on
 screen, but they are not equally interesting, and on a busy afternoon the
