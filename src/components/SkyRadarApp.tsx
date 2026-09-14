@@ -26,6 +26,7 @@ import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceHeading } from "../hooks/useDeviceHeading";
 import { useAircraftData } from "../hooks/useAircraftData";
 import { useReverseGeocode } from "../hooks/useReverseGeocode";
+import { usePhotoPrefetch } from "../hooks/usePhotoPrefetch";
 import { useAircraftStore } from "../store/useAircraftStore";
 import { useRadarStore } from "../store/useRadarStore";
 import { useSelectionStore } from "../store/useSelectionStore";
@@ -51,6 +52,10 @@ export default function SkyRadarApp() {
 
   useAircraftData(geo.position, radar.rangeMiles);
   const placeName = useReverseGeocode(geo.position);
+
+  // Warm the photos of the aircraft overhead the moment they appear, so
+  // tapping one shows its picture straight away instead of starting a lookup.
+  usePhotoPrefetch(aircraftStore.current, geo.position);
 
   // Derived directly from the data store (not from canvas rendering) so the
   // empty state stays correct even if the map's tiles are slow or fail to
