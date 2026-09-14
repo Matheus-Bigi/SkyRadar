@@ -108,7 +108,8 @@ export interface SkyViewProps {
   selectedAircraftId: string | null;
   /** The range the scope is set to — Sky View fades contacts against it. */
   rangeMiles: number;
-  onSelect: (id: string) => void;
+  /** null clears the target — Sky View can be flown with nothing chosen. */
+  onSelect: (id: string | null) => void;
   onExit: () => void;
   prefs: SkyViewPrefs;
 }
@@ -163,12 +164,30 @@ export default function SkyView({
   }, [aircraft, userPosition, userAltitudeMeters]);
 
   const selectedIndex = targets.findIndex((t) => t.aircraft.id === selectedAircraftId);
-  const target = selectedIndex >= 0 ? targets[selectedIndex] : targets[0];
+  // No quiet fall back to the nearest aircraft: "nothing chosen" is a state
+  // the user can ask for, and pretending something is still selected would
+  // leave the card describing an aircraft they had just let go of.
+  const target = selectedIndex >= 0 ? targets[selectedIndex] : null;
 
-  // Always guide towards something: opening Sky View with nothing chosen
-  // should still be useful, so the nearest aircraft becomes the target.
+  /**
+   * Opening Sky View with nothing chosen should still be useful, so the
+   * nearest aircraft becomes the target — but only once, on the way in.
+   * Re-running it every time the selection emptied made letting go of an
+   * aircraft impossible: the tap cleared it and the effect immediately chose
+   * another.
+   */
+  const openingPickMade = useRef(false);
   useEffect(() => {
-    if (!selectedAircraftId && targets.length > 0) onSelect(targets[0].aircraft.id);
+    if (openingPickMade.current) return;
+    if (selectedAircraftId) {
+      // Arrived with a choice already made on the radar. Leave it alone.
+      openingPickMade.current = true;
+      return;
+    }
+    if (targets.length > 0) {
+      openingPickMade.current = true;
+      onSelect(targets[0].aircraft.id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAircraftId, targets.length]);
 
@@ -225,9 +244,12 @@ export default function SkyView({
         const d = Math.hypot(m.x - x, m.y - y);
         if (d <= m.radius && (!best || d < best.d)) best = { id: m.id, d };
       }
-      if (best) onSelect(best.id);
+      // Tapping empty sky lets the current aircraft go, and so does tapping
+      // the one already being followed — the same gesture the radar uses, and
+      // the way into looking around with nothing singled out.
+      onSelect(!best || best.id === selectedAircraftId ? null : best.id);
     },
-    [onSelect]
+    [onSelect, selectedAircraftId]
   );
 
   // Live guidance for the current target.
@@ -345,7 +367,12 @@ export default function SkyView({
 
       {/* ---------- the target ---------- */}
       {target && (
-        <div ref={cardRef} className="absolute inset-x-3 bottom-3 z-10">
+        <div
+          ref={cardRef}
+          data-testid="skyview-card"
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-x-3 bottom-3 z-10"
+        >
           <div className="rounded-xl border border-radar-panelborder bg-radar-panel/92 p-3 backdrop-blur-md">
             <div className="flex items-start gap-3">
               <button
@@ -438,6 +465,23 @@ export default function SkyView({
         </div>
       )}
 
+      {/*
+        Nothing chosen, but there is traffic up there. The card's whole band
+        is given back to the sky — that is the point of looking around — and
+        the one line left says how to start following something again.
+        Measured like the card so the HUD knows how much room it just gained.
+      */}
+      {!target && targets.length > 0 && (
+        <div ref={cardRef} className="absolute inset-x-3 bottom-3 z-10">
+          <div
+            data-testid="skyview-exploring"
+            className="rounded-xl border border-radar-panelborder bg-radar-panel/92 px-4 py-3 text-center font-mono text-[11px] tracking-widest text-radar-textdim backdrop-blur-md"
+          >
+            LOOKING AROUND — TAP AN AIRCRAFT TO FOLLOW IT
+          </div>
+        </div>
+      )}
+
       {targets.length === 0 && (
         <div className="pointer-events-none absolute inset-x-0 bottom-24 text-center">
           <div className="font-mono text-[11px] tracking-[0.25em] text-radar-textdim">CLEAR SKY</div>
@@ -448,7 +492,10 @@ export default function SkyView({
       )}
 
       {needsPermission && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/85 p-6 text-center">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/85 p-6 text-center"
+        >
           <div className="max-w-xs">
             <div className="mb-2 font-mono text-sm tracking-widest text-radar-text">SKY VIEW</div>
             <p className="mb-5 text-sm text-radar-textdim">
