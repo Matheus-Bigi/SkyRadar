@@ -33,6 +33,7 @@ export function useDeviceAttitude(): DeviceAttitudeState {
   const [state, setState] = useState<DeviceAttitudeState>({
     pitchDeg: 0,
     rollDeg: 0,
+    screenAngleUsed: 0,
     available: false,
   });
 
@@ -41,6 +42,9 @@ export function useDeviceAttitude(): DeviceAttitudeState {
 
     let pitch: number | null = null;
     let roll: number | null = null;
+    // Which way round the page settled last time. Carried across events so the
+    // answer is steady rather than re-argued sixty times a second.
+    let settledScreenAngle: number | null = null;
 
     const handler = (event: DeviceOrientationEvent) => {
       const next = attitudeFromAngles({
@@ -48,8 +52,10 @@ export function useDeviceAttitude(): DeviceAttitudeState {
         beta: event.beta,
         gamma: event.gamma,
         screenAngle: currentScreenAngle(),
+        previousScreenAngle: settledScreenAngle,
       });
       if (!next) return;
+      settledScreenAngle = next.screenAngleUsed;
 
       // Roll wraps at ±180, so blend the short way round rather than
       // sweeping the horizon all the way through zero.
@@ -60,7 +66,7 @@ export function useDeviceAttitude(): DeviceAttitudeState {
         roll = roll + delta * SMOOTHING;
       }
 
-      setState({ pitchDeg: pitch, rollDeg: roll, available: true });
+      setState({ pitchDeg: pitch, rollDeg: roll, screenAngleUsed: next.screenAngleUsed, available: true });
     };
 
     // Same preference as the compass: the absolute event where it exists.
