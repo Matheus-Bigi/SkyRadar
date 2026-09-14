@@ -420,6 +420,7 @@ export default function SkyRadarApp() {
           userPosition={geo.position}
           userAltitudeMeters={geo.altitudeMeters ?? 0}
           selectedAircraftId={selection.selectedAircraftId}
+          rangeMiles={radar.rangeMiles}
           onSelect={(id) => selection.select(id)}
           onExit={() => setSkyViewOpen(false)}
           prefs={{ arLabelsEnabled: prefs.arLabelsEnabled, arDistanceDisplay: prefs.arDistanceDisplay }}

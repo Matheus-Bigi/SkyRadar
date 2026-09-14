@@ -106,6 +106,8 @@ export interface SkyViewProps {
   userPosition: LatLon;
   userAltitudeMeters: number;
   selectedAircraftId: string | null;
+  /** The range the scope is set to — Sky View fades contacts against it. */
+  rangeMiles: number;
   onSelect: (id: string) => void;
   onExit: () => void;
   prefs: SkyViewPrefs;
@@ -128,6 +130,7 @@ export default function SkyView({
   userPosition,
   userAltitudeMeters,
   selectedAircraftId,
+  rangeMiles,
   onSelect,
   onExit,
   prefs,
@@ -273,6 +276,7 @@ export default function SkyView({
           selectedAircraftId={target?.aircraft.id ?? null}
           showLabels={prefs.arLabelsEnabled}
           showDistance={prefs.arDistanceDisplay}
+          rangeMiles={rangeMiles}
           safeInsets={safeInsets}
           onMarkers={(m) => {
             markersRef.current = m;

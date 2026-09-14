@@ -533,6 +533,36 @@ angle between them barely changes.
 rotated by the track itself — see [Heading-up](#heading-up). That path is
 untouched by this.)
 
+**Distance is drawn, not just written.** An aircraft thirty miles off used to
+be drawn exactly as loudly as one overhead. Both are real and both belong on
+screen, but they are not equally interesting, and on a busy afternoon the
+distant ones crowd out the aircraft you could actually walk outside and see.
+Three things now vary with range (`src/lib/ar/depth.ts`):
+
+- **Opacity**, most of all. Full strength close by, down to a ghost at the
+  edge of range. The floor is deliberately well above nothing: faded all the
+  way out, a distant aircraft became indistinguishable from the aim reticle it
+  sat behind — and an aircraft you cannot see is one you cannot tap either.
+- **Size**, gently. Shrinking alone reads as a smaller aeroplane rather than a
+  further one, and past a point it just makes the icon unrecognisable.
+- **How much the label says.** Near by, callsign, operator and figures; further
+  out, the callsign alone; further still, nothing but the silhouette. This is
+  what actually buys back the screen — the plates, not the icons, are what
+  compete for space.
+
+The scale is the range the scope is set to, the same one the radar's rings
+use, so the cue always spans the world being shown: on 30 miles the far half
+recedes, and on 3 miles everything left is close and stays bright. Three miles
+is treated as close on any range, because it is — squeezing the whole fade into
+a three-mile world would call a nearby airliner faint.
+
+The aircraft being hunted is exempt at every distance, in all three respects.
+Choosing one and then watching it fade would be the app arguing with the user.
+
+Contacts are also drawn furthest-first, so a nearer aircraft always sits on top
+of a distant one. Drawing them in the order the list happened to arrive in put
+the far ones on top, which is exactly backwards for reading depth.
+
 **Labels get out of each other's way.** On a busy afternoon half a dozen
 aircraft sit within a few degrees of each other. Labels are placed after
 every silhouette is down: the chosen target first, which always keeps its
@@ -540,7 +570,10 @@ label, then the rest nearest-first, each taking the first of four placements
 (below, above, right, left) that collides with nothing already drawn. A label
 with nowhere to go is dropped — the silhouette still speaks for itself, and
 one readable box beats three stacked on the same patch of sky. Only the
-target gets a search ring, for the same reason.
+target gets a search ring, for the same reason — and only the target's label
+stands off far enough to clear one. Standing every label off by a ring nobody
+can see left a distant aircraft's name floating a hundred pixels away from it,
+with nothing to say which belonged to which.
 
 **The pitch ladder turns with the world; its numbers stay upright.** The
 ladder is an artificial horizon and belongs to the sky, but text that rolls
