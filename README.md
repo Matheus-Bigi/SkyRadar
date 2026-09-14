@@ -381,6 +381,35 @@ throw them off further. Two things address that:
   heading, with nudge buttons to line the radar up with what's actually out
   the window. The offset persists.
 
+## The control rail
+
+Every control on the radar page lives in one rail down the right-hand side.
+They used to sit across the bottom of the screen, where they covered the
+lower part of the scope — exactly where aircraft to the south appear.
+
+On a phone that rail is about a quarter of the screen's width, and the map
+underneath it is the point of the app, so it folds away: **HIDE ›** at the top
+of the rail tucks it off the right edge, and a **‹** tab at the screen's edge
+brings it back. The choice persists, because someone who wants the map
+uncovered wants it uncovered next time too.
+
+Two details make it behave:
+
+- **Everything beside the rail is anchored to one distance from the right
+  edge**, published as a CSS custom property on the page. The aircraft card,
+  the Layers panel and the compass calibration panel all read it, so folding
+  the rail moves all of them together and there is a single place to get it
+  right — rather than four components each guessing at the rail's width.
+- **The handle lives inside the rail while it is open**, not floating beside
+  it, so an open rail costs the map no more room than it already did. Only
+  the folded state needs a tab of its own, and that sits hard against the
+  screen edge, outside the plotted scope — a handle at mid-height would sit
+  exactly where aircraft due east are drawn.
+
+A folded rail is also hidden rather than merely slid off-screen. A control
+parked out of sight is still in the tab order and still read aloud, and a
+keyboard or VoiceOver user would otherwise land on buttons they cannot see.
+
 ## Sky View
 
 Hold the device up, follow the guidance, find the aeroplane. The whole mode

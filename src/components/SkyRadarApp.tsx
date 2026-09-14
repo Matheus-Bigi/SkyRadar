@@ -187,8 +187,17 @@ export default function SkyRadarApp() {
     );
   }
 
+  // Everything that sits beside the rail — the aircraft card, the Layers
+  // panel, the compass calibration panel, the rail's own handle — is anchored
+  // to this one distance from the right edge, so folding the rail away moves
+  // all of them together and there is a single place to get it right.
+  const railCollapsed = prefs.controlRailCollapsed;
+
   return (
-    <main className="relative h-full w-full select-none overflow-hidden bg-radar-bg">
+    <main
+      className="relative h-full w-full select-none overflow-hidden bg-radar-bg"
+      style={{ "--rail-inset": railCollapsed ? "0.75rem" : "7rem" } as React.CSSProperties}
+    >
       <MapView
         center={geo.position}
         rangeMiles={radar.rangeMiles}
@@ -246,7 +255,36 @@ export default function SkyRadarApp() {
         the radar — exactly where aircraft to the south appear. The rail keeps
         the whole scope clear, and scrolls if a short screen can't fit it all.
       */}
-      <div className="no-scrollbar absolute bottom-3 right-3 top-16 z-20 flex w-24 flex-col items-stretch gap-2 overflow-y-auto">
+      <div
+        id="control-rail"
+        className={clsx(
+          "no-scrollbar absolute bottom-3 right-3 top-16 z-20 flex w-24 flex-col items-stretch gap-2 overflow-y-auto",
+          "transition-[transform,visibility] duration-200 ease-out motion-reduce:transition-none",
+          // `invisible` rather than only sliding it off: a control parked
+          // off-screen is still in the tab order and still read out, and a
+          // keyboard or VoiceOver user would land on buttons they cannot see.
+          // Visibility flips at the end of the transition, so the slide still
+          // plays out.
+          railCollapsed && "pointer-events-none invisible translate-x-[calc(100%+0.75rem)]"
+        )}
+      >
+        {/*
+          Part of the rail rather than floating beside it: an open rail then
+          costs the map no more room than it already did. Sticky, because the
+          rail scrolls on a short screen and a handle that scrolls out of
+          reach is no handle at all.
+        */}
+        <button
+          onClick={() => prefs.set("controlRailCollapsed", true)}
+          aria-expanded
+          aria-controls="control-rail"
+          aria-label="Hide controls"
+          title="Hide controls"
+          className="sticky top-0 z-10 flex shrink-0 items-center justify-end gap-1 rounded-lg border border-radar-panelborder bg-radar-panel/90 px-2 py-1 font-mono text-[9px] leading-none tracking-widest text-radar-textdim backdrop-blur-sm hover:text-radar-text"
+        >
+          HIDE <span className="text-xs">{"\u203a"}</span>
+        </button>
+
         <div className="flex justify-center">
           <CompassWidget heading={heading.heading} onCalibrate={() => setCalibrationOpen((v) => !v)} />
         </div>
@@ -323,9 +361,30 @@ export default function SkyRadarApp() {
         <CompassCalibration heading={heading} onClose={() => setCalibrationOpen(false)} />
       )}
 
+      {/*
+        The way back in, shown only while the rail is folded. Rendered after
+        the panels it shares a layer with, so whatever else is open, the
+        control that brings the rail back is never the thing underneath. At
+        the very edge of the screen it sits outside the plotted scope, unlike
+        a handle parked at mid-height — which is exactly where aircraft due
+        east are drawn.
+      */}
+      {railCollapsed && (
+        <button
+          onClick={() => prefs.set("controlRailCollapsed", false)}
+          aria-expanded={false}
+          aria-controls="control-rail"
+          aria-label="Show controls"
+          title="Show controls"
+          className="absolute right-0 top-1/2 z-30 -translate-y-1/2 rounded-l-lg border border-r-0 border-radar-panelborder bg-radar-panel/90 py-4 pl-2 pr-1.5 font-mono text-xs leading-none text-radar-textdim backdrop-blur-sm hover:text-radar-text"
+        >
+          {"\u2039"}
+        </button>
+      )}
+
       {/* Bottom-left, clear of both the scope's centre and the control rail. */}
       {selectedAircraft && geometry && !selection.lookHereActive && (
-        <div className="absolute bottom-3 left-3 right-28 z-20 max-w-sm">
+        <div className="absolute bottom-3 left-3 right-[var(--rail-inset,7rem)] z-20 max-w-sm transition-[right] duration-200 ease-out motion-reduce:transition-none">
           <AircraftCard
             aircraft={selectedAircraft}
             geometry={geometry}

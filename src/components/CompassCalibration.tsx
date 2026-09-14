@@ -39,7 +39,7 @@ export default function CompassCalibration({
 
   return (
     <div
-      className="animate-card-in absolute right-28 top-16 z-30 w-60 rounded-xl border border-radar-panelborder bg-radar-panel/95 p-3 shadow-2xl backdrop-blur-md"
+      className="animate-card-in absolute right-[var(--rail-inset,7rem)] top-16 z-30 w-60 rounded-xl border border-radar-panelborder bg-radar-panel/95 p-3 shadow-2xl backdrop-blur-md transition-[right] duration-200 ease-out motion-reduce:transition-none"
       role="dialog"
       aria-label="Compass calibration"
     >
