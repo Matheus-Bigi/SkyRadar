@@ -79,6 +79,23 @@ function bearingToScreenRad(bearingDeg: number, rotationOffsetDeg = 0): number {
   return toRad(bearingDeg - rotationOffsetDeg - 90);
 }
 
+/**
+ * Which way an aircraft's nose points *on screen*.
+ *
+ * The silhouettes are drawn nose-up at 0°, so in the default north-up plot
+ * an aircraft's true track can be used directly. The moment the plot turns —
+ * heading-up rotates the whole map under the overlay — that stops being
+ * true: screen-up is no longer north, and drawing the raw track leaves every
+ * aircraft pointing somewhere it isn't flying, turning with the device
+ * instead of staying put over the ground.
+ *
+ * Subtracting whatever bearing is currently "up" puts the nose back where
+ * the aircraft is actually going.
+ */
+export function screenHeadingDeg(trueTrackDeg: number, plotRotationDeg: number): number {
+  return normalizeDegrees(trueTrackDeg - plotRotationDeg);
+}
+
 function categoryMatches(filter: CategoryFilter, aircraft: Aircraft): boolean {
   return filter === "ALL" || aircraft.category === filter;
 }
@@ -194,6 +211,12 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       // mode (once we actually have a heading reading), true north otherwise.
       const rotationOffsetDeg = headingUpMode && userHeading !== null ? userHeading : 0;
 
+      // What the plot is *actually* rotated to right now. When a map is
+      // present that is the map's own bearing, not the value we asked for:
+      // the map eases into a new bearing and ignores sub-degree changes, so
+      // reading it back keeps the aircraft glued to the ground even mid-turn.
+      const plotRotationDeg = map ? map.getBearing() : rotationOffsetDeg;
+
       let centerPt: { x: number; y: number };
       let radiusPx: number;
       if (usePolar) {
@@ -303,6 +326,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
           const sweepGlow = detectedAt ? Math.max(0, 1 - (now - detectedAt) / SWEEP_GLOW_DURATION_MS) : 0;
 
           drawAircraftMarker(ctx, pt.x, pt.y, rendered, {
+            plotRotationDeg,
             selected: isSelected,
             visuallyRelevant: isVisuallyRelevant,
             militaryHighlighting: prefs.militaryHighlighting,
@@ -577,6 +601,8 @@ function drawUserMarker(
 }
 
 interface MarkerDrawOptions {
+  /** The bearing currently pointing "up" on screen, so the nose can be corrected. */
+  plotRotationDeg: number;
   selected: boolean;
   visuallyRelevant: boolean;
   militaryHighlighting: boolean;
@@ -627,7 +653,7 @@ function drawAircraftMarker(
     ctx.shadowBlur = 5;
   }
 
-  drawSilhouette(ctx, a.silhouette, x, y, a.heading ?? 0, size, {
+  drawSilhouette(ctx, a.silhouette, x, y, screenHeadingDeg(a.heading ?? 0, opts.plotRotationDeg), size, {
     fill: opts.selected ? THEME.selected : isMil ? THEME.military : THEME.aircraft,
     stroke: isMil ? THEME.militaryAccent : THEME.aircraftStroke,
     lineWidth: 1,
