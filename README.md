@@ -201,20 +201,42 @@ briefly; a failure is never cached at all.
 
 ### Photos before you ask for them
 
-The slowest possible design is to start looking for a photo at the moment
-someone taps an aircraft. So SkyRadar doesn't: as aircraft appear on the
-scope, the ten nearest have their photos warmed in the background
-(`usePhotoPrefetch`). Nearest first, because those are the ones overhead —
-the ones this whole app exists to help you identify, and the ones you are
-actually going to tap.
+The slowest possible design is to start looking for a photo when someone
+taps an aircraft. SkyRadar doesn't: every aircraft on the scope is queued
+the moment it appears, and by the time you tap one its picture is usually
+already there.
 
-Those requests are coalesced by `photoClient.ts` into a single batched call
-(`?ac=hex|reg,hex|reg,…`), deduplicated, and cached in the browser for the
-session, so tapping an aircraft usually paints its photo on the first frame
-with no request at all — and re-selecting one never costs anything. The
-server holds its own 12-hour cache per identifier, and the endpoint is
-cacheable by the CDN, so the fastest lookup is the one that never leaves the
-device.
+**Order matters more than volume.** On a typical scope most contacts are
+general aviation, but the ones people actually tap are the airliners and the
+military traffic — so those are fetched first, rotorcraft next, everything
+else last, nearest first within each band. Nothing is skipped; a GA contact
+still gets its photo, it just waits behind the ones more likely to be
+wanted. Tapping an aircraft promotes it straight to the front of the queue,
+so even one the queue hadn't reached is fetched immediately.
+
+**The browser asks first.** Planespotters' photo API is built to be called
+from a page — tar1090 does exactly that — so SkyRadar tries it directly from
+the device before falling back to its own server. Going direct uses the
+viewer's own address and their browser's own user agent, rather than a
+serverless function's shared address and a custom agent string, which can be
+the difference between being served and being throttled. It is also simply
+faster: no hop through our server at all. If that route turns out to be
+blocked by CORS, the first failure latches it off for the session and
+everything goes through the server batch instead — which is also where the
+second photo service lives.
+
+**A miss is not final.** An empty answer can mean "this airframe has no
+photo" or "that service was having a moment", and those are indistinguishable
+at the time. Each aircraft gets three rounds, spaced seconds apart, with the
+caches bypassed on later rounds so a retry genuinely retries. Until those are
+exhausted the card shows a framed placeholder with a sweeping mark, so a
+photo still on its way looks like a photo on its way rather than a bug. Only
+afterwards does the card say *no photo available*, with a retry button.
+
+One thing the server deliberately does **not** do is let the CDN cache an
+empty answer. A successful lookup is worth holding for an hour; an answer
+with nothing in it might just be one bad moment upstream, and caching that
+would freeze it into an hour of blank cards for everyone.
 
 **There is deliberately no route.** ADS-B carries none — an aircraft
 broadcasts its identity, position and movement, and nothing about its

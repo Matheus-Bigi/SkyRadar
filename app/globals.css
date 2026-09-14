@@ -72,3 +72,25 @@ body {
 .maplibregl-ctrl-logo {
   display: none !important;
 }
+
+/*
+ * The radar's own "working on it" mark, used while an aircraft photo is
+ * still being fetched. A sweeping arc rather than a generic spinner, so a
+ * pending photo reads as part of the instrument instead of a web widget.
+ */
+@keyframes radar-sweep-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.photo-spinner {
+  border-radius: 9999px;
+  border: 2px solid rgba(51, 255, 153, 0.18);
+  border-top-color: rgba(51, 255, 153, 0.85);
+  animation: radar-sweep-spin 900ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .photo-spinner {
+    animation-duration: 2400ms;
+  }
+}
