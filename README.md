@@ -331,6 +331,38 @@ close, so every overlay landed at half its true distance from centre — the
 error growing with distance, which is why the centred "you are here" marker
 looked perfect while the airports were miles out.
 
+## Heading-up
+
+Heading-up turns the whole plot so the direction you're facing is at the top
+of the screen. Two things have to be true for that to be honest.
+
+**Aircraft must stay pointing where they're actually flying.** The
+silhouettes are drawn nose-up at 0°, so in the default north-up plot an
+aircraft's true track can be drawn directly. The instant the plot turns that
+stops being true — screen-up is no longer north — and drawing the raw track
+leaves every aircraft pointing somewhere it isn't going, swinging round as
+you turn the device instead of staying put over the ground. Every silhouette
+is drawn at `track − whatever bearing is currently up` (`screenHeadingDeg`).
+
+That bearing is read back from the map rather than taken from the value we
+asked it for: the map eases into a new bearing and ignores sub-degree
+changes, so reading it keeps aircraft glued to the ground even mid-turn.
+
+**Place names can't rotate with the map.** The basemap is raster, so its
+text is pixels — rotate the map and the words rotate too, upside down along
+the bottom of the screen. Nothing can straighten them. What can be done is
+take them off: Esri's labels arrive as a separate transparent coat, so
+heading-up hides that layer and shows them again when the plot settles
+north-up. Toggling layer visibility rather than rebuilding the style keeps
+every loaded tile exactly where it is, so the map never blanks.
+
+Airports keep their labels either way — those are drawn by the radar canvas,
+upright, in both modes. The one gap is the OpenStreetMap fallback, whose
+labels are baked into the same tiles as the map itself and so can't be
+separated; that only applies if Esri is unreachable. Names while rotating
+would need a vector basemap, where labels are text the renderer can keep
+upright.
+
 ## Compass
 
 Phone and tablet magnetometers drift, and cases, speakers and car dashboards

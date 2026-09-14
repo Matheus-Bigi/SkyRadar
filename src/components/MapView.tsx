@@ -45,6 +45,15 @@ interface BasemapLayer {
   tiles: string[];
   tileSize: number;
   maxzoom: number;
+  /**
+   * True for a transparent coat carrying only place names and road labels.
+   *
+   * Raster tiles are pictures, so their text is pixels: rotate the map and
+   * the words rotate with it, upside down at the bottom of the screen.
+   * Nothing can straighten them — but a coat that is *only* labels can be
+   * taken off while the map is turning, which is what heading-up does.
+   */
+  labels?: boolean;
 }
 
 interface Basemap {
@@ -70,13 +79,16 @@ const BASEMAPS: Basemap[] = [
         tileSize: 256,
         maxzoom: 16,
       },
-      // Place names and road labels ride on a separate transparent layer.
+      // Place names and road labels ride on a separate transparent layer —
+      // which is exactly what lets heading-up drop them rather than show
+      // them upside down.
       {
         tiles: [
           "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
         ],
         tileSize: 256,
         maxzoom: 16,
+        labels: true,
       },
     ],
   },
@@ -163,6 +175,10 @@ export default function MapView({
   const tileErrorsRef = useRef(0);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryBasemapRef = useRef<(() => void) | null>(null);
+  const applyLabelVisibilityRef = useRef<(() => void) | null>(null);
+  // Read inside map callbacks, which are registered once and outlive renders.
+  const headingUpRef = useRef(headingUpMode);
+  headingUpRef.current = headingUpMode;
   const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -189,6 +205,25 @@ export default function MapView({
       if (watchdogRef.current) clearTimeout(watchdogRef.current);
       watchdogRef.current = null;
     };
+
+    /**
+     * Take the label coat off while the map is turning, put it back when it
+     * settles north-up. Toggling layer visibility rather than rebuilding the
+     * style keeps every tile already loaded exactly where it is — rebuilding
+     * would blank the map for a moment on every toggle.
+     */
+    const applyLabelVisibility = () => {
+      const basemap = BASEMAPS[basemapIndexRef.current];
+      basemap.layers.forEach((layer, i) => {
+        if (!layer.labels) return;
+        const id = `${BASEMAP_LAYER_ID}-${i}`;
+        if (!map.getLayer(id)) return;
+        map.setLayoutProperty(id, "visibility", headingUpRef.current ? "none" : "visible");
+      });
+    };
+    applyLabelVisibilityRef.current = applyLabelVisibility;
+    // Re-applied after every style change, since a new style starts fresh.
+    map.on("style.load", applyLabelVisibility);
 
     // Exposed so the idle refresh cycle can restart a dead chain.
     retryBasemapRef.current = () => {
@@ -253,6 +288,11 @@ export default function MapView({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Labels come off while the plot is turning and go back on when it isn't.
+  useEffect(() => {
+    applyLabelVisibilityRef.current?.();
+  }, [headingUpMode]);
 
   // Start the basemap chain over when the refresh cycle says to — but only
   // if no tile ever arrived, so a working map is never disturbed.
