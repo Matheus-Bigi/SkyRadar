@@ -346,6 +346,31 @@ throw them off further. Two things address that:
   heading, with nudge buttons to line the radar up with what's actually out
   the window. The offset persists.
 
+## The entry screen
+
+Before any permission is granted there is nothing real to show, so the screen
+shows the instrument instead of a splash. Aircraft cross the dark trailing
+fading tracks, each carrying a callsign, an altitude and a speed, drawn with
+the radar's own silhouette sprites, its own trail falloff, its own label
+stack and its own green. A fighter crosses in seconds; a helicopter takes
+most of a minute. That spread is the point — it shows, before you have
+granted anything, that this app knows the difference.
+
+**Nothing there is real.** Those are invented aircraft (`AmbientTraffic`) on
+a decorative canvas, shown only on the entry screen, before any location is
+known and where there is no scope to confuse them with. The callsigns are
+deliberately fictional — SKR is not an assigned ICAO designator — and none of
+it can reach the radar, which draws only from live ADS-B.
+
+Keeping the mark, the buttons and the byline crisp is done by fading each
+contact as it nears them, not by laying a dark pool over the middle. The pool
+was the obvious approach and it was wrong twice: it swallowed the traffic,
+and at these near-black values the gradient banded into visible rings.
+Fading per contact leaves the background perfectly flat.
+
+With `prefers-reduced-motion`, the traffic holds still as a composed tableau
+rather than disappearing — the screen stays populated, nothing moves.
+
 ## Design language
 
 Dark, desaturated map; restrained radar green; clean vector aircraft
