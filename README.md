@@ -497,12 +497,41 @@ gravity can be asked directly. The browser's number is still used wherever it
 agrees with a plausibly-held device, and the quarter turn in use is sticky,
 so leaning the tablet reports the lean rather than snapping the horizon round.
 
-**Silhouettes are drawn nose-up**, deliberately not rotated by the aircraft's
-track. In the sky you are looking at a three-dimensional object from an
-arbitrary angle; rotating the icon would be a claim about its attitude from
-where you stand, which the data does not support. (On the radar plot, where
-you are looking at a plan view, the silhouette *is* rotated — see
-[Heading-up](#heading-up).)
+**Silhouettes point the way the aircraft is seen to be going** — down the
+view as it recedes, up as it comes on, sideways as it crosses. They were
+drawn nose-up at first, on the grounds that a plan-view icon says nothing
+about attitude. True, but it left an aircraft passing overhead drawn flying
+backwards, which reads as a bug however defensible the reasoning.
+
+What is drawn is the *apparent* direction, not the compass track, and the
+difference matters. Take an aircraft climbing away to the north: its altitude
+is rising, but its elevation in your sky is falling, so on screen it slides
+towards the horizon. Point the icon along its track and it would be drawn
+climbing while visibly sinking — the same complaint in reverse. To gain height
+in your sky while flying away, an aircraft has to climb steeper than the line
+of sight to it, which is rarer than it sounds.
+
+`apparentTrackDeg()` finds it by asking where the aircraft will appear a
+moment from now — stepping its position along its own velocity, then putting
+both points through the same projection as the marker itself, so perspective,
+roll and the camera's aim are all accounted for without repeating any of that
+arithmetic. The step is scaled to a fixed fraction of the range, which keeps
+the chord close to the tangent whether the aircraft is a mile away or forty.
+
+It declines to answer rather than guess. An aircraft coming straight at you
+barely moves across the view, so there is no direction to read; one with no
+track reported gives nothing to work from. In both cases the icon holds the
+last direction it was seen travelling, or sits nose-up if it never had one —
+so it stays still instead of spinning on noise.
+
+The accuracy this needs is mild. The marker's *position* depends on the
+compass being right; its *rotation* is a difference between two nearby points,
+so a compass several degrees out moves both by nearly the same amount and the
+angle between them barely changes.
+
+(On the radar plot, where you are looking at a plan view, the silhouette is
+rotated by the track itself — see [Heading-up](#heading-up). That path is
+untouched by this.)
 
 **Labels get out of each other's way.** On a busy afternoon half a dozen
 aircraft sit within a few degrees of each other. Labels are placed after

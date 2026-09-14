@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Aircraft } from "../lib/aircraft/types";
 import { LatLon, deriveGeometry, feetToMeters, toRad } from "../lib/geo";
 import { fmtAltitude, fmtMiles, fmtSpeed } from "../lib/format";
-import { Attitude, projectSky, searchRadiusDeg } from "../lib/ar/projection";
+import { Attitude, apparentTrackDeg, projectSky, searchRadiusDeg } from "../lib/ar/projection";
 import { drawSilhouette } from "../lib/render/silhouettes";
 import { THEME } from "../lib/render/theme";
 
@@ -74,6 +74,13 @@ export default function SkyViewCanvas({
   onMarkers,
 }: SkyViewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /**
+   * The last direction each contact was seen to be travelling. An aircraft
+   * coming straight at you barely moves across the view, so there is nothing
+   * to read a direction from; holding the last one it had keeps the icon
+   * still instead of letting it spin on noise.
+   */
+  const lastTrackRef = useRef<Map<string, number>>(new Map());
 
   // Live values read inside the animation loop, so a stream of orientation
   // events never forces a React render.
@@ -192,7 +199,23 @@ export default function SkyViewCanvas({
         // circles say nothing except "somewhere in here", and bury the one
         // area the user is actually being sent to.
         if (selected) drawSearchArea(ctx, projected.x, projected.y, radius);
-        drawContact(ctx, projected.x, projected.y, a, selected);
+
+        const seenTrack = apparentTrackDeg(
+          { azimuthDeg: geometry.bearing, elevationDeg: geometry.elevationAngle },
+          geometry.distanceMeters,
+          {
+            trackDeg: a.heading,
+            groundSpeedKt: a.groundSpeed,
+            verticalSpeedFpm: a.verticalSpeed,
+          },
+          s.attitude,
+          viewport
+        );
+        if (seenTrack !== null) lastTrackRef.current.set(a.id, seenTrack);
+        // Nose-up only when nothing is known — no track reported, or an
+        // aircraft coming straight at you that has never crossed the view.
+        const drawnTrack = seenTrack ?? lastTrackRef.current.get(a.id) ?? 0;
+        drawContact(ctx, projected.x, projected.y, a, selected, drawnTrack);
         visible.push({
           aircraft: a,
           x: projected.x,
@@ -219,6 +242,14 @@ export default function SkyViewCanvas({
         for (const c of order) {
           const box = drawLabel(ctx, c, width, height, s.safeInsets, taken, s.showDistance);
           if (box) taken.push(box);
+        }
+      }
+
+      // Nothing is remembered about aircraft no longer in the sky.
+      if (lastTrackRef.current.size > s.aircraft.length) {
+        const present = new Set(s.aircraft.map((a) => a.id));
+        for (const id of lastTrackRef.current.keys()) {
+          if (!present.has(id)) lastTrackRef.current.delete(id);
         }
       }
 
@@ -345,7 +376,8 @@ function drawContact(
   x: number,
   y: number,
   a: Aircraft,
-  selected: boolean
+  selected: boolean,
+  headingDeg: number
 ) {
   ctx.save();
   ctx.globalAlpha = selected ? 1 : 0.8;
@@ -353,10 +385,12 @@ function drawContact(
     ctx.shadowColor = THEME.selectedGlow;
     ctx.shadowBlur = 14;
   }
-  // Nose-up: this is a direction cue in the sky, not a plan view, so the
-  // silhouette is not rotated by the aircraft's track — that would read as a
-  // claim about its attitude from where you're standing, which it isn't.
-  drawSilhouette(ctx, a.silhouette, x, y, 0, selected ? 17 : 13, {
+  // Pointed the way it is seen to be going — down the view as it recedes, up
+  // as it comes on, sideways as it crosses. Nose-up regardless was the first
+  // attempt, on the grounds that a plan-view icon says nothing about attitude;
+  // true, but it left an aircraft passing overhead drawn flying backwards,
+  // which reads as a bug however defensible the reasoning.
+  drawSilhouette(ctx, a.silhouette, x, y, headingDeg, selected ? 17 : 13, {
     fill: selected ? THEME.selected : a.isMilitary ? THEME.military : THEME.aircraft,
     // A dark outline rather than the radar's soft grey: a pale silhouette on
     // a pale sky needs an edge to exist at all.
