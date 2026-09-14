@@ -151,6 +151,8 @@ const HARD_CAP = 18;
  * contact actually reads.
  */
 const VISIBLE_ALPHA = 0.6;
+/** Shortest gap between two arrivals when refilling. */
+const SPAWN_INTERVAL_MS = 260;
 
 const TRAIL_POINTS = 20;
 const TRAIL_SAMPLE_MS = 140;
@@ -166,7 +168,14 @@ export interface ClearZone {
 
 /** Breathing room kept around the content before traffic reaches full strength. */
 const CLEAR_PADDING = 14;
-const CLEAR_FALLOFF = 0.28;
+/**
+ * The fade band around the content, in pixels — the same width on every
+ * screen. It used to be a fraction of the content's own size, which on a
+ * phone, where the content is nearly as wide as the display, put the far edge
+ * of the fade off the side of the screen: no part of that band was ever fully
+ * clear, so the backdrop ran empty however many aircraft were aloft.
+ */
+const CLEAR_FALLOFF_PX = 64;
 
 /**
  * How visible an aircraft may be at a given point on screen.
@@ -190,10 +199,13 @@ function clearance(
 ): number {
   let centre = 1;
   if (zone && zone.halfWidth > 0 && zone.halfHeight > 0) {
-    const dx = (px - zone.centerX) / (zone.halfWidth + CLEAR_PADDING);
-    const dy = (py - zone.centerY) / (zone.halfHeight + CLEAR_PADDING);
-    const d = Math.sqrt(dx * dx + dy * dy);
-    centre = Math.max(0, Math.min(1, (d - 1) / CLEAR_FALLOFF));
+    // How far outside the content's own box this point lies. A box rather
+    // than an ellipse, so the corners of a wide screen stay usable, and
+    // measured in pixels so the band behaves the same on a phone and a
+    // tablet. Inside the box both terms are zero and nothing is drawn at all.
+    const dx = Math.max(0, Math.abs(px - zone.centerX) - (zone.halfWidth + CLEAR_PADDING));
+    const dy = Math.max(0, Math.abs(py - zone.centerY) - (zone.halfHeight + CLEAR_PADDING));
+    centre = Math.min(1, Math.hypot(dx, dy) / CLEAR_FALLOFF_PX);
   }
 
   // And a clean strip along the bottom, where the byline sits.
@@ -245,16 +257,32 @@ function spawn(
   // width, so an arrival at mid-height spends its whole crossing dimmed —
   // which is how a phone ended up with contacts in the air and an empty
   // looking screen.
-  let along = 0.1 + Math.random() * 0.8;
-  let entry = edgeEntry(edge, along, margin);
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const probe = {
-      x: Math.min(0.95, Math.max(0.05, entry.x)),
-      y: Math.min(0.95, Math.max(0.05, entry.y)),
-    };
-    if (clearance(probe.x * width, probe.y * height, height, zone) > 0.8) break;
-    along = 0.1 + Math.random() * 0.8;
-    entry = edgeEntry(edge, along, margin);
+  //
+  // The whole crossing is scored, not just the doorway. Checking only where a
+  // contact came in let it enter somewhere clear and then fly straight behind
+  // the content, where it is dimmed to nothing — present in the count, absent
+  // from the screen.
+  const aspect = width / Math.max(1, height);
+  let entry = edgeEntry(edge, 0.1 + Math.random() * 0.8, margin);
+  let headingDeg = entry.base + (Math.random() * 70 - 35);
+  let bestScore = -1;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = edgeEntry(edge, 0.1 + Math.random() * 0.8, margin);
+    const candidateHeading = candidate.base + (Math.random() * 70 - 35);
+    const rad = ((candidateHeading - 90) * Math.PI) / 180;
+    let score = 0;
+    for (let step = 1; step <= 6; step++) {
+      const t = (step / 6) * 1.2;
+      const px = (candidate.x + Math.cos(rad) * t) * width;
+      const py = (candidate.y + Math.sin(rad) * t * aspect) * height;
+      if (px < 0 || py < 0 || px > width || py > height) continue;
+      score += clearance(px, py, height, zone);
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      entry = candidate;
+      headingDeg = candidateHeading;
+    }
   }
 
   // Don't arrive on top of someone already there — two contacts in the same
@@ -273,7 +301,7 @@ function spawn(
     kind,
     x: entry.x,
     y: entry.y,
-    headingDeg: entry.base + (Math.random() * 70 - 35),
+    headingDeg,
     callsign: kind.callsign(),
     trail: [],
     lastSampleAt: now,
@@ -326,6 +354,9 @@ export default function AmbientTraffic({ clearZone = null }: { clearZone?: Clear
      * where the logo was about to be — invisible from the first frame.
      */
     let openingPlaced = false;
+    // Refilling a gap one aircraft at a time, spaced out, so a sudden exodus
+    // is answered by a steady stream rather than a formation.
+    let lastSpawnAt = 0;
     const placeOpening = (now: number) => {
       openingPlaced = true;
       const opening = reduceMotion ? MAX_VISIBLE : MIN_VISIBLE + 2;
@@ -353,24 +384,30 @@ export default function AmbientTraffic({ clearZone = null }: { clearZone?: Clear
         placeOpening(now);
       }
 
-      if (!reduceMotion && aloft.length < HARD_CAP) {
+      if (!reduceMotion && aloft.length < HARD_CAP && now - lastSpawnAt >= SPAWN_INTERVAL_MS) {
         // Contacts still fading in count towards the floor, so a gap is
-        // filled at once without summoning a crowd that all arrives together
-        // — but only partly, because a budget satisfied entirely by aircraft
-        // that haven't appeared yet still leaves the screen looking empty
-        // for the length of the fade.
+        // filled without summoning a crowd that all arrives together — but
+        // credited for how close they are to actually being seen rather than
+        // a flat share each. A flat share let a trough last the whole length
+        // of a fade: aircraft that had only just spawned made up most of the
+        // floor, so the refill stopped while the screen still looked empty.
         const floor =
           Math.min(width, height) < COMPACT_EDGE_PX ? MIN_VISIBLE_COMPACT : MIN_VISIBLE;
         let heading = 0;
         for (const c of aloft) {
           if (c.alpha > VISIBLE_ALPHA) heading += 1;
-          else if (now - c.bornAt < FADE_MS * 1.6) heading += 0.6;
+          else {
+            const coming = (now - c.bornAt) / (FADE_MS * 1.6);
+            if (coming < 1) heading += Math.min(0.85, coming);
+          }
         }
         // No random trickle on top: the floor alone regulates this. Adding a
         // steady drip as well pushed a wide screen up to nine at once, which
-        // reads as busy rather than alive.
+        // reads as busy rather than alive. The interval does the same job for
+        // a deep gap — it refills steadily instead of all at once.
         if (heading < floor) {
           aloft.push(spawn(now, aloft, width, height, zoneRef.current));
+          lastSpawnAt = now;
         }
       }
 
@@ -415,13 +452,25 @@ export default function AmbientTraffic({ clearZone = null }: { clearZone?: Clear
         for (let t = 1; t < c.trail.length; t++) {
           const ax = c.trail[t].x * width;
           const ay = c.trail[t].y * height;
-          // Each segment is faded where it lies, so a track can't streak
-          // across the wordmark just because its aircraft is clear of it.
+          const bx = c.trail[t - 1].x * width;
+          const by = c.trail[t - 1].y * height;
+          // Faded by whichever end of the segment is least clear, not by one
+          // of them. Judging a segment only by its far end let a track whose
+          // near end lay inside the mark be stroked right across it at full
+          // strength — a fast contact covers the whole falloff band between
+          // two samples.
           const a =
-            (t / c.trail.length) * 0.34 * fadeIn * fadeOut * clearance(ax, ay, height, zoneRef.current);
+            (t / c.trail.length) *
+            0.34 *
+            fadeIn *
+            fadeOut *
+            Math.min(
+              clearance(ax, ay, height, zoneRef.current),
+              clearance(bx, by, height, zoneRef.current)
+            );
           if (a <= 0.004) continue;
           ctx.beginPath();
-          ctx.moveTo(c.trail[t - 1].x * width, c.trail[t - 1].y * height);
+          ctx.moveTo(bx, by);
           ctx.lineTo(ax, ay);
           ctx.strokeStyle = `rgba(51,255,153,${a.toFixed(3)})`;
           ctx.lineWidth = 1;
@@ -439,8 +488,13 @@ export default function AmbientTraffic({ clearZone = null }: { clearZone?: Clear
         ctx.restore();
 
         // Callsign over altitude and speed — the scope's exact label stack.
+        // The stack sits above the aircraft, so it is faded where the *text*
+        // lands rather than where the aeroplane is: a contact just clear of
+        // the mark could otherwise print its callsign inside it.
+        const labelTop = py - c.kind.size - 18;
+        const labelClearance = clearance(px, labelTop, height, zoneRef.current);
         ctx.save();
-        ctx.globalAlpha = alpha * 0.55;
+        ctx.globalAlpha = Math.min(alpha, fadeIn * fadeOut * labelClearance) * 0.55;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
         ctx.fillStyle = THEME.labelDim;

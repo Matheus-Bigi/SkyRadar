@@ -425,6 +425,23 @@ card, and an arrow drawn in those bands — as the "it's below you" arrow once
 was — is an arrow nobody sees. That band is measured from the live card
 rather than assumed, because the card grows with the aircraft it describes.
 
+**Which way up the picture is.** Roll comes from gravity — `beta`/`gamma`
+give world-up in the device's own frame, and its angle from the screen's up
+direction is the tilt of the horizon. Turning that into the *page's* frame
+needs to know how far the page is rotated, and `screen.orientation.angle` is
+treated as a hint rather than an answer: it measures the page against the
+device's *natural* orientation, and on some tablets that is landscape, while
+`beta`/`gamma` arrive in a portrait-fixed frame regardless. On such a device
+the two disagree by a quarter turn, and taking the browser at its word drew
+the horizon vertical and inverted every movement — which is exactly what an
+iPad did, held in landscape reporting `beta 0, gamma -90` with an angle of 0.
+
+Gravity settles it. The browser rotates the page to whichever quarter turn
+leaves it most upright, and that decision is itself made from gravity, so
+gravity can be asked directly. The browser's number is still used wherever it
+agrees with a plausibly-held device, and the quarter turn in use is sticky,
+so leaning the tablet reports the lean rather than snapping the horizon round.
+
 **Silhouettes are drawn nose-up**, deliberately not rotated by the aircraft's
 track. In the sky you are looking at a three-dimensional object from an
 arbitrary angle; rotating the icon would be a claim about its attitude from
@@ -478,11 +495,35 @@ control: on a phone, where the content covers most of the width, the pool
 filled with contacts stuck in the dimmed middle, the cap was reached, and
 nothing new could spawn. The screen sat empty with nine aircraft in the air.
 The budget now counts what can actually be seen, at the opacity a contact
-actually reads at, and tops up when it runs short. Arrivals also pick an
-entry point where they will be visible, rather than one that dooms them to
-cross dimmed. A phone gets a lower floor on purpose: forcing four into the
-narrow bands above and below its content would crowd the screen rather than
-improve it.
+actually reads at, and tops up when it runs short. A phone gets a lower floor
+on purpose: forcing four into the narrow bands above and below its content
+would crowd the screen rather than improve it.
+
+Three things decide whether that budget is ever met:
+
+- **The shape of the clear zone.** A fixed 64-pixel fade around the content's
+  own box, not a fraction of the box's size. As a fraction it over-reached on
+  a phone — where the content is nearly as wide as the display, the far edge
+  of the fade fell off the side of the screen, so no part of that band was
+  ever fully clear and the backdrop ran empty however many aircraft were
+  aloft. A box rather than an ellipse also keeps the corners of a wide screen
+  usable.
+- **Where arrivals are aimed.** The whole crossing is scored, not just the
+  doorway. Checking only the entry point let a contact come in somewhere
+  clear and then fly straight behind the content, present in the count and
+  absent from the screen.
+- **How a gap is refilled.** Aircraft still fading in count towards the floor
+  in proportion to how close they are to being seen, rather than a flat share
+  each — a flat share let a trough last the whole length of a fade, because
+  aircraft that had only just spawned made up most of the budget. Arrivals are
+  spaced a fraction of a second apart so a sudden exodus is answered by a
+  stream rather than a formation.
+
+Nothing is ever drawn over the mark, the button or the byline: inside the
+content's box the opacity is exactly zero. Each trail segment is faded by
+whichever of its two ends is least clear — judging a segment by one end let a
+fast contact stroke a line right across the wordmark between two samples — and
+each label is faded where the *text* lands rather than where its aircraft is.
 
 With `prefers-reduced-motion`, the traffic holds still as a composed tableau
 rather than disappearing — the screen stays populated, nothing moves.
@@ -518,6 +559,11 @@ device — they're used purely as an AR background.
   is; it does not account for a miscalibrated device, magnetic interference
   from a car or a case, or an aircraft that manoeuvred since its last report.
   Tap the compass dial on the radar page to correct a known offset.
+- Sky View works out which way up the page is from gravity rather than from
+  the browser, for the reason above. The cost is the uncommon case of a reader
+  who has locked rotation *and* turned the device on its side: the horizon is
+  then drawn level with the page instead of with the world. Unlocking rotation
+  restores it.
 - The camera's field of view is assumed to be 63° horizontal. Browsers do not
   report the real figure, so on a device with a notably wider or narrower
   lens the marked area will be slightly the wrong size — by less than the
