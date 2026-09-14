@@ -5,6 +5,7 @@ import { Aircraft } from "../lib/aircraft/types";
 import { LatLon, deriveGeometry, feetToMeters, toRad } from "../lib/geo";
 import { fmtAltitude, fmtMiles, fmtSpeed } from "../lib/format";
 import { Attitude, apparentTrackDeg, projectSky, searchRadiusDeg } from "../lib/ar/projection";
+import { LabelDetail, contactAlpha, contactScale, depthProminence, labelDetailFor } from "../lib/ar/depth";
 import { drawSilhouette } from "../lib/render/silhouettes";
 import { THEME } from "../lib/render/theme";
 
@@ -45,6 +46,8 @@ export interface SkyViewCanvasProps {
   selectedAircraftId: string | null;
   showLabels: boolean;
   showDistance: boolean;
+  /** The range the scope is set to, in miles — the scale the fade works on. */
+  rangeMiles: number;
   /**
    * Where the opaque chrome sits. The HUD is painted underneath the top bar
    * and the target card, so an arrow placed in those bands is an arrow
@@ -70,6 +73,7 @@ export default function SkyViewCanvas({
   selectedAircraftId,
   showLabels,
   showDistance,
+  rangeMiles,
   safeInsets,
   onMarkers,
 }: SkyViewCanvasProps) {
@@ -93,6 +97,7 @@ export default function SkyViewCanvas({
     selectedAircraftId,
     showLabels,
     showDistance,
+    rangeMiles,
     safeInsets,
     onMarkers,
   });
@@ -105,6 +110,7 @@ export default function SkyViewCanvas({
     selectedAircraftId,
     showLabels,
     showDistance,
+    rangeMiles,
     safeInsets,
     onMarkers,
   };
@@ -195,10 +201,6 @@ export default function SkyViewCanvas({
         }
 
         markers.push({ id: a.id, x: projected.x, y: projected.y, radius });
-        // Only the target gets a ring. Half a dozen overlapping dashed
-        // circles say nothing except "somewhere in here", and bury the one
-        // area the user is actually being sent to.
-        if (selected) drawSearchArea(ctx, projected.x, projected.y, radius);
 
         const seenTrack = apparentTrackDeg(
           { azimuthDeg: geometry.bearing, elevationDeg: geometry.elevationAngle },
@@ -215,7 +217,6 @@ export default function SkyViewCanvas({
         // Nose-up only when nothing is known — no track reported, or an
         // aircraft coming straight at you that has never crossed the view.
         const drawnTrack = seenTrack ?? lastTrackRef.current.get(a.id) ?? 0;
-        drawContact(ctx, projected.x, projected.y, a, selected, drawnTrack);
         visible.push({
           aircraft: a,
           x: projected.x,
@@ -223,7 +224,25 @@ export default function SkyViewCanvas({
           radius,
           distanceMiles: geometry.distanceMiles,
           selected,
+          prominence: depthProminence(geometry.distanceMiles, s.rangeMiles),
+          trackDeg: drawnTrack,
         });
+      }
+
+      // The ring belongs behind everything: it marks where to look, and an
+      // aircraft is never worth hiding under it. Only the target gets one —
+      // half a dozen overlapping dashed circles say nothing except "somewhere
+      // in here", and bury the one area the user is being sent to.
+      const target = visible.find((c) => c.selected);
+      if (target) drawSearchArea(ctx, target.x, target.y, target.radius);
+
+      // Furthest first, so a nearer aircraft always sits on top of a distant
+      // one rather than the other way about. Drawing in the order the list
+      // happens to arrive in put the far ones on top, which is exactly
+      // backwards for reading depth.
+      const byDepth = [...visible].sort((a, b) => b.distanceMiles - a.distanceMiles);
+      for (const c of byDepth) {
+        drawContact(ctx, c.x, c.y, c.aircraft, c.selected, c.trackDeg, c.prominence);
       }
 
       // Labels last, and only once every silhouette is down: on a busy
@@ -238,7 +257,12 @@ export default function SkyViewCanvas({
           width: 24,
           height: 24,
         }));
-        const order = [...visible].sort((a, b) => Number(b.selected) - Number(a.selected));
+        // The chosen target first, then nearest outwards: when two labels
+        // want the same patch of sky, the closer aircraft should be the one
+        // that gets to keep its name.
+        const order = [...visible].sort(
+          (a, b) => Number(b.selected) - Number(a.selected) || a.distanceMiles - b.distanceMiles
+        );
         for (const c of order) {
           const box = drawLabel(ctx, c, width, height, s.safeInsets, taken, s.showDistance);
           if (box) taken.push(box);
@@ -377,10 +401,11 @@ function drawContact(
   y: number,
   a: Aircraft,
   selected: boolean,
-  headingDeg: number
+  headingDeg: number,
+  prominence: number
 ) {
   ctx.save();
-  ctx.globalAlpha = selected ? 1 : 0.8;
+  ctx.globalAlpha = contactAlpha(prominence, selected);
   if (selected) {
     ctx.shadowColor = THEME.selectedGlow;
     ctx.shadowBlur = 14;
@@ -390,7 +415,7 @@ function drawContact(
   // attempt, on the grounds that a plan-view icon says nothing about attitude;
   // true, but it left an aircraft passing overhead drawn flying backwards,
   // which reads as a bug however defensible the reasoning.
-  drawSilhouette(ctx, a.silhouette, x, y, headingDeg, selected ? 17 : 13, {
+  drawSilhouette(ctx, a.silhouette, x, y, headingDeg, 13 * contactScale(prominence, selected) + (selected ? 4 : 0), {
     fill: selected ? THEME.selected : a.isMilitary ? THEME.military : THEME.aircraft,
     // A dark outline rather than the radar's soft grey: a pale silhouette on
     // a pale sky needs an edge to exist at all.
@@ -407,6 +432,10 @@ interface VisibleContact {
   radius: number;
   distanceMiles: number;
   selected: boolean;
+  /** 1 close by, down to a floor at the edge of range. */
+  prominence: number;
+  /** Which way it is seen to be travelling, in screen degrees. */
+  trackDeg: number;
 }
 
 interface Box {
@@ -440,7 +469,13 @@ function drawLabel(
   taken: Box[],
   showDistance: boolean
 ): Box | null {
-  const { aircraft: a, x, y, radius, selected } = contact;
+  const { aircraft: a, x, y, radius, selected, prominence } = contact;
+  const detailLevel: LabelDetail = labelDetailFor(prominence, selected);
+  // Nothing at all out at the edge of range: the silhouette still says an
+  // aircraft is there, and a plate for every distant contact is precisely
+  // what was crowding the sky.
+  if (detailLevel === "none") return null;
+
   const identity = a.callsign ?? a.registration ?? a.id.toUpperCase();
   const operator = a.isMilitary ? "MILITARY" : (a.airline ?? a.operator ?? null);
   const detail = [
@@ -454,14 +489,14 @@ function drawLabel(
   const lines: { text: string; font: string; color: string }[] = [
     { text: identity, font: "11px ui-monospace, SFMono-Regular, monospace", color: "#ffffff" },
   ];
-  if (operator) {
+  if (operator && detailLevel === "full") {
     lines.push({
       text: operator.length > 22 ? `${operator.slice(0, 21)}\u2026` : operator,
       font: "9px ui-monospace, SFMono-Regular, monospace",
       color: a.isMilitary ? THEME.militaryAccent : "rgba(215,230,225,0.85)",
     });
   }
-  if (detail) {
+  if (detail && detailLevel === "full") {
     lines.push({
       text: detail,
       font: "9px ui-monospace, SFMono-Regular, monospace",
@@ -480,7 +515,12 @@ function drawLabel(
 
   // Below the contact reads best — it keeps the sky above the aeroplane, which
   // is where you are looking — so the other placements are only fallbacks.
-  const gap = radius + 8;
+  //
+  // Only the target clears the search ring, because only the target draws one.
+  // Standing every label off by a ring nobody can see left a distant aircraft's
+  // name floating a hundred pixels from the aircraft, with nothing to say which
+  // belonged to which.
+  const gap = selected ? radius + 8 : 14;
   const candidates: Array<[number, number]> = [
     [x - boxWidth / 2, y + gap],
     [x - boxWidth / 2, y - gap - boxHeight],
@@ -523,6 +563,11 @@ function drawLabel(
   const { left, top } = placed;
 
   ctx.save();
+  // Faded with distance like everything else, but held well above the
+  // silhouette's floor: a label is either readable or it is litter, and a
+  // ghost of a callsign helps nobody. Below the threshold it is not drawn at
+  // all, which is the honest way to make it quieter.
+  ctx.globalAlpha = selected ? 1 : 0.55 + 0.45 * prominence;
   ctx.fillStyle = selected ? "rgba(4,12,10,0.85)" : "rgba(4,12,10,0.62)";
   ctx.strokeStyle = selected ? "rgba(51,255,153,0.5)" : "rgba(51,255,153,0.2)";
   ctx.lineWidth = 1;
