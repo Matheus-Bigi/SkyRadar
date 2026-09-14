@@ -16,7 +16,6 @@ import {
 } from "../lib/format";
 import SilhouetteIcon from "./SilhouetteIcon";
 import { useAircraftPhoto } from "../hooks/useAircraftPhoto";
-import { useAircraftRoute } from "../hooks/useAircraftRoute";
 
 export interface AircraftCardProps {
   aircraft: Aircraft;
@@ -39,30 +38,13 @@ function Field({ label, value, secondary }: { label: string; value: string | nul
 }
 
 export default function AircraftCard({ aircraft, geometry, expanded, onToggleExpand, onClose, onLookHere }: AircraftCardProps) {
-  // Both lookups start as soon as the card opens — not on expand — so the
-  // photo and route are already there by the time anyone taps MORE. Each is
-  // keyed on this aircraft's own identity and clears when the selection
-  // changes, so one aircraft's details can never linger over another's.
   const photo = useAircraftPhoto(aircraft.id, aircraft.registration);
-  const route = useAircraftRoute(aircraft);
   const isMilitary = aircraft.isMilitary;
 
-  // The route database names the operating carrier; the callsign's ICAO
-  // designator is the offline fallback. Both are published facts about this
-  // flight — nothing is inferred from the aircraft's appearance or owner.
-  const airline = route.airline ?? aircraft.airline ?? null;
-  const routeLine =
-    route.origin && route.destination
-      ? `${route.origin} → ${route.destination}`
-      : route.origin
-        ? `FROM ${route.origin}`
-        : route.destination
-          ? `TO ${route.destination}`
-          : null;
-  const routeNames =
-    route.originName && route.destinationName
-      ? `${route.originName} → ${route.destinationName}`
-      : route.originName ?? route.destinationName ?? null;
+  // Straight off the callsign's ICAO designator — a published identifier,
+  // not an inference. There is deliberately no route here: see the note in
+  // the README about why callsign→route databases were removed.
+  const airline = aircraft.airline ?? null;
 
   return (
     <div
@@ -89,13 +71,8 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
           {aircraft.aircraftModel && (
             <div className="truncate text-[11px] leading-tight text-radar-textdim">{aircraft.aircraftModel}</div>
           )}
-          <div className="mt-0.5 flex items-center gap-2">
-            {routeLine && (
-              <span className="truncate font-mono text-[10px] tracking-wider text-radar-green">{routeLine}</span>
-            )}
-            <span className="font-mono text-[9px] tracking-widest text-radar-textdim">
-              {categoryLabel(aircraft.category)}
-            </span>
+          <div className="mt-0.5 font-mono text-[9px] tracking-widest text-radar-textdim">
+            {categoryLabel(aircraft.category)}
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -175,22 +152,13 @@ export default function AircraftCard({ aircraft, geometry, expanded, onToggleExp
             </div>
           </div>
 
-          {(aircraft.flightNumber || airline || routeLine || route.unconfirmed) && (
+          {(aircraft.flightNumber || airline) && (
             <div className="mb-3">
               <div className="mb-1 font-mono text-[10px] tracking-widest text-radar-textdim">FLIGHT</div>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Airline" value={airline} />
                 <Field label="Flight #" value={aircraft.flightNumber ?? null} />
-                <Field label="Route" value={routeLine} secondary={routeNames} />
               </div>
-              {/* Said out loud rather than left blank: the databases were asked
-                  and nothing they offered matched where this aircraft actually
-                  is. A route we can't stand behind isn't shown. */}
-              {route.unconfirmed && (
-                <div className="mt-1 font-mono text-[9px] tracking-widest text-radar-textdim">
-                  NO CONFIRMED ROUTE FOR THIS FLIGHT
-                </div>
-              )}
             </div>
           )}
 

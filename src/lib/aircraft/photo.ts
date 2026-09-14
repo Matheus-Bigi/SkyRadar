@@ -45,6 +45,8 @@ const MISS_TTL_MS = 1000 * 60 * 20;
 const FETCH_TIMEOUT_MS = 7000;
 /** One retry, because a single transient failure shouldn't cost the photo. */
 const ATTEMPTS_PER_SOURCE = 2;
+/** How many aircraft a batch resolves at once. */
+const BATCH_CONCURRENCY = 4;
 
 const USER_AGENT = "SkyRadar/1.0 (personal aviation radar; non-commercial)";
 
@@ -63,71 +65,113 @@ interface PhotoSource {
 }
 
 /**
- * Every place worth asking, in the order worth asking. Hex before
- * registration within each service, since the hex is the identifier the
- * aircraft actually transmits.
+ * Sources grouped into tiers. Within a tier every source is asked at once —
+ * so a tier costs one round trip, not one per identifier — and the tiers are
+ * tried in order, stopping as soon as one produces a photo.
+ *
+ * Planespotters holds by far the most airframes and is asked first, by hex
+ * and registration together. airport-data.com only gets asked when
+ * Planespotters has nothing, which keeps the common case to two upstream
+ * requests resolved in parallel rather than up to four in series.
  */
-function sourcesFor(icao24?: string, registration?: string): PhotoSource[] {
-  const sources: PhotoSource[] = [];
-  if (icao24) {
-    const hex = icao24.toLowerCase();
-    sources.push({
+function sourceTiers(icao24?: string, registration?: string): PhotoSource[][] {
+  const hex = icao24?.toLowerCase();
+  const planespotters: PhotoSource[] = [];
+  const airportData: PhotoSource[] = [];
+
+  if (hex) {
+    planespotters.push({
       id: `planespotters:hex:${hex}`,
       url: `https://api.planespotters.net/pub/photos/hex/${encodeURIComponent(hex)}`,
       parse: parsePlanespotters,
     });
   }
   if (registration) {
-    sources.push({
+    planespotters.push({
       id: `planespotters:reg:${registration}`,
       url: `https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(registration)}`,
       parse: parsePlanespotters,
     });
   }
   if (icao24) {
-    sources.push({
+    airportData.push({
       id: `airport-data:hex:${icao24}`,
       url: `https://api.airport-data.com/api/ac_thumb.json?m=${encodeURIComponent(icao24)}&n=1`,
       parse: parseAirportData,
     });
   }
   if (registration) {
-    sources.push({
+    airportData.push({
       id: `airport-data:reg:${registration}`,
       url: `https://api.airport-data.com/api/ac_thumb.json?r=${encodeURIComponent(registration)}&n=1`,
       parse: parseAirportData,
     });
   }
-  return sources;
+
+  return [planespotters, airportData].filter((tier) => tier.length > 0);
+}
+
+/** Flattened, in priority order — used by the diagnostics probe. */
+function sourcesFor(icao24?: string, registration?: string): PhotoSource[] {
+  return sourceTiers(icao24, registration).flat();
 }
 
 export async function lookupAircraftPhoto(query: PhotoQuery): Promise<AircraftPhoto> {
   const icao24 = normalize(query.icao24);
   const registration = normalize(query.registration);
-  const sources = sourcesFor(icao24, registration);
-  if (sources.length === 0) return {};
 
-  for (const source of sources) {
-    const cached = cache.get(source.id);
-    if (cached && cached.expiresAt > Date.now()) {
-      if (cached.imageUrl) return stripExpiry(cached);
-      continue; // known-empty for this identifier — try the next one
-    }
-
-    try {
-      const photo = await fetchWithRetry(source);
-      cache.set(source.id, {
-        ...photo,
-        expiresAt: Date.now() + (photo.imageUrl ? CACHE_TTL_MS : MISS_TTL_MS),
-      });
-      if (photo.imageUrl) return photo;
-    } catch {
-      // Network/timeout: deliberately not cached. Recording a blip as "this
-      // aircraft has no photo" would hide a real one for hours.
-    }
+  for (const tier of sourceTiers(icao24, registration)) {
+    // Every source in the tier at once: the whole tier costs one round trip.
+    const results = await Promise.all(tier.map((source) => resolve(source)));
+    // Preference within a tier still follows source order (hex before
+    // registration), regardless of which answered first.
+    const hit = results.find((photo) => photo?.imageUrl);
+    if (hit) return hit;
   }
 
   return {};
+}
+
+/** One source, with its cache, its retry, and its failures swallowed. */
+async function resolve(source: PhotoSource): Promise<AircraftPhoto | null> {
+  const cached = cache.get(source.id);
+  if (cached && cached.expiresAt > Date.now()) return stripExpiry(cached);
+
+  try {
+    const photo = await fetchWithRetry(source);
+    cache.set(source.id, {
+      ...photo,
+      expiresAt: Date.now() + (photo.imageUrl ? CACHE_TTL_MS : MISS_TTL_MS),
+    });
+    return photo;
+  } catch {
+    // Network/timeout: deliberately not cached. Recording a blip as "this
+    // aircraft has no photo" would hide a real one for hours.
+    return null;
+  }
+}
+
+/**
+ * Several aircraft at once, for warming the cache ahead of a tap. Bounded
+ * concurrency: these are free, volunteer-funded APIs, and a screen full of
+ * traffic should not arrive as one burst.
+ */
+export async function lookupAircraftPhotos(
+  queries: Array<PhotoQuery & { key: string }>
+): Promise<Record<string, AircraftPhoto>> {
+  const out: Record<string, AircraftPhoto> = {};
+  const queue = [...queries];
+
+  const workers = Array.from({ length: Math.min(BATCH_CONCURRENCY, queue.length) }, async () => {
+    for (;;) {
+      const next = queue.shift();
+      if (!next) return;
+      out[next.key] = await lookupAircraftPhoto(next);
+    }
+  });
+
+  await Promise.all(workers);
+  return out;
 }
 
 interface PlanespottersPhoto {

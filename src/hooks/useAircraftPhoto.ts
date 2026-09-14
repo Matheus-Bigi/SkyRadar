@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { CachedPhoto, cachedPhoto, photoKey, requestPhoto } from "../lib/aircraft/photoClient";
 
 export interface PhotoResult {
   imageUrl: string | null;
@@ -15,68 +16,74 @@ export interface PhotoResult {
 
 const IDLE = { imageUrl: null, attribution: null, loading: false, empty: false, failed: false };
 
+function fromCache(key: string) {
+  const hit: CachedPhoto | undefined = key === "|" ? undefined : cachedPhoto(key);
+  if (!hit) return null;
+  return { ...hit, loading: false, empty: !hit.imageUrl, failed: false };
+}
+
 /**
- * Fetches the photo of one specific airframe.
+ * The photo of one specific airframe.
  *
  * Both identifiers are passed through: the ICAO 24-bit address is broadcast
  * by every aircraft, so it finds a photo even when the feed couldn't resolve
  * a registration.
  *
- * "No photo exists" and "the lookup failed" are tracked separately. They look
- * identical from the outside but mean opposite things — one is final, the
- * other is worth trying again — and collapsing them is how a transient blip
- * turns into a card that just quietly never shows a picture.
+ * Anything already in the browser cache — very often the case, because the
+ * radar warms the photos of nearby aircraft as they appear — is returned on
+ * the first render with no request and no loading flash.
  *
- * The result is cleared the instant the identity changes: showing the
- * previous aircraft's photo on the new one's card would be showing something
- * that isn't real.
+ * "No photo exists" and "the lookup failed" are tracked separately. They
+ * look identical on screen but mean opposite things: one is final, the other
+ * is worth retrying, and collapsing them is how a blip becomes a card that
+ * quietly never shows a picture.
  */
 export function useAircraftPhoto(
   icao24: string | undefined,
   registration: string | undefined
 ): PhotoResult {
-  const [state, setState] = useState(IDLE);
+  const key = photoKey(icao24, registration);
+  // Seeded straight from the cache so an already-known photo paints on the
+  // very first render rather than after a round trip.
+  const [state, setState] = useState(() => fromCache(key) ?? IDLE);
   const [attempt, setAttempt] = useState(0);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
-    if (!icao24 && !registration) {
+    if (key === "|") {
       setState(IDLE);
+      return;
+    }
+
+    const known = fromCache(key);
+    if (known && attempt === 0) {
+      setState(known);
       return;
     }
 
     let cancelled = false;
     setState({ ...IDLE, loading: true });
 
-    const params = new URLSearchParams();
-    if (icao24) params.set("hex", icao24);
-    if (registration) params.set("registration", registration);
-
-    fetch(`/api/aircraft/photo?${params.toString()}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`photo lookup ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        const imageUrl = data.imageUrl ?? null;
-        setState({
-          imageUrl,
-          attribution: data.attribution ?? null,
-          loading: false,
-          empty: !imageUrl,
-          failed: false,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ ...IDLE, failed: true });
+    requestPhoto(key).then((photo) => {
+      if (cancelled) return;
+      if (!photo) {
+        setState({ ...IDLE, failed: true });
+        return;
+      }
+      setState({
+        imageUrl: photo.imageUrl,
+        attribution: photo.attribution,
+        loading: false,
+        empty: !photo.imageUrl,
+        failed: false,
       });
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [icao24, registration, attempt]);
+  }, [key, attempt]);
 
   return { ...state, retry };
 }
