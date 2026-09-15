@@ -82,8 +82,9 @@ Matter vector style — no API key needed) is the base layer. A single
 rotating sweep, aircraft silhouettes, trails, and labels — every animation
 frame, using `map.project()` to convert each aircraft's real lat/lon into
 screen pixels. This keeps the radar sweep and aircraft animation smooth at
-60fps independent of how often new data arrives (aircraft positions are
-interpolated between polls; see `src/lib/render/interpolate.ts`), and keeps
+60fps independent of how often new data arrives (aircraft are carried forward
+between fixes; see [Carrying an aircraft between
+fixes](#carrying-an-aircraft-between-fixes)), and keeps
 radar rings dimensionally accurate to the selected range in miles regardless
 of zoom.
 
@@ -296,6 +297,70 @@ between polls, so a stale snapshot didn't just sit there — it kept *moving*,
 drawing aircraft on dead reckoning from a position nobody had confirmed in
 minutes. An empty scope under a "LIVE DATA UNAVAILABLE" banner is the honest
 picture.
+
+## Carrying an aircraft between fixes
+
+Fixes arrive every four seconds. The screen redraws sixty times a second. What
+happens in between decides whether traffic appears to fly or to twitch.
+
+**What it does now.** Each aircraft is carried forward from its own last
+measured position, along its own reported ground track, at its own reported
+ground speed, for the time that has actually passed since that position was
+measured. Every number in that sentence is one the aircraft itself reported
+over ADS-B. Nothing is inferred from one aircraft to another, and nothing is
+inferred from the clock on the wall.
+
+Dating the position is the part that needs care. The API returns `fetchedAt`
+alongside each snapshot, and every aircraft carries `lastUpdated`; both are
+the server's clock, so the difference between them is that aircraft's
+position age — a real reported figure, ADS-B's `seen_pos` — and subtracting
+one from the other cancels any skew between the server's clock and the
+phone's. The store pairs that with the device-clock moment the snapshot was
+*first* seen. First, not last: the provider caches for five seconds while the
+browser polls every four, so roughly every other response replays a snapshot
+already held. A replay arrives later but still describes the instant it was
+built, so the anchor must not move with it.
+
+An aircraft that reports no usable ground speed or track is not carried at
+all. It is drawn exactly where it was reported, because an unknown velocity
+is not a reason to guess. Carrying is also capped at twenty seconds, which
+clears the worst healthy case — a position a few seconds old, served from a
+five-second cache, held for a four-second poll — without letting a stalled
+feed fly an aeroplane across the county.
+
+**What it did before, and why that had to change.** The old engine took the
+last two snapshots, treated the gap between their *arrival times* as the time
+between them, and slid each aircraft along the line from one to the other,
+running past the newer one by a fixed factor to keep things moving between
+polls.
+
+That assumed the feed advances in step with our polling. It does not, and the
+five-second cache against a four-second poll makes it fail in the most regular
+way possible: roughly every other response is byte-identical to the last. Two
+identical snapshots imply an aircraft that has not moved, so it froze. The
+next fresh snapshot then carried two intervals of travel, which the engine
+read as one, so it raced away at double speed and overshot. The next fix
+corrected the whole overshoot in a single frame.
+
+On screen that is every aircraft edging forward, stalling, then twitching back
+together on an eight-second cycle, however steadily they are all really
+flying. The lockstep was the tell: the error came from a clock every aircraft
+shared, not from any of their positions.
+
+Two smaller things fell out of the rewrite. The old code appeared to blend
+heading and altitude between fixes, using `Math.min(t, 1)` — but `t` reaches
+1 at the exact moment a fix lands and only grows after that, so the blend
+never once ran and both values always came straight from the newest report.
+Dropping it changed nothing. And the engine never interpolated in the sense
+its name suggested: it only ever extrapolated.
+
+**How it is tested.** `scratchpad/test-wobble.cjs` flies one aircraft dead
+straight at a constant speed past a mocked feed that reproduces the real
+one — the five-second cache, the replayed `fetchedAt`, the position age — and
+measures the icon on the canvas in both the radar and Sky View. Any reversal
+it sees is the app's, because the aeroplane never turns. An earlier mock
+served a freshly measured position on every single request; it was clean
+enough to hide this fault entirely, which is the more useful lesson.
 
 ## The basemap
 
@@ -515,19 +580,12 @@ changes nothing.
 **Why the silhouettes glide.** Positions arrive every four seconds. Drawn
 raw, an aircraft crossing overhead jumps a finger's width at a time — barely
 noticeable on the radar, glaring through a camera, where the sky behind it is
-moving smoothly and the icon is not. So Sky View reads the same interpolation
-engine the radar has always used (`src/lib/render/interpolate.ts`), once per
-animation frame and outside React, and draws each aircraft where it *is* now
-rather than where the last fix put it.
-
-One detail matters: `t` in that engine reaches 1 at the instant a fix lands,
-so everything past 1 is dead reckoning. The radar's default stops a little
-short of the next fix, which it can afford. Sky View passes 2 — exactly one
-interval ahead, where a constant-velocity aircraft will be when the next fix
-is due. Stop short of that and the icon stalls and then lurches forward; run
-past it and the arriving fix drags it back. At 2 the prediction and the fix
-agree, and the motion is even. The parameter is optional and defaults to the
-radar's old value, so the radar's behaviour is untouched.
+moving smoothly and the icon is not. So Sky View reads the same motion engine
+the radar uses (`src/lib/render/interpolate.ts`), once per animation frame and
+outside React, and draws each aircraft where it *is* now rather than where its
+last measured position put it. How that engine works, and the fault that made
+it necessary to rewrite, is under [Carrying an aircraft between
+fixes](#carrying-an-aircraft-between-fixes).
 
 **Which way to turn.** The guidance bar gives one instruction per axis:
 `TURN LEFT 40° · LOOK UP 25°`. When an axis rounds to zero it says `ON
@@ -757,12 +815,18 @@ device — they're used purely as an AR background.
   magnetic interference from a car or a case, or an aircraft that manoeuvred
   hard since its last report. Tap the compass dial on the radar page to
   correct a known offset.
-- Between fixes, Sky View shows where an aircraft *should* be, carried
-  forward from its last reported position, speed and track. That is a
-  prediction, not a measurement: an aircraft that turns or changes speed
-  mid-interval will be drawn slightly off until the next fix lands. The
-  alternative — freezing the icon for four seconds and then teleporting it —
-  is no more truthful and far harder to follow.
+- Between fixes, both the radar and Sky View show where an aircraft *should*
+  be, carried forward from its last measured position along its own reported
+  speed and track. That is a prediction, not a measurement: an aircraft that
+  turns or changes speed mid-interval is drawn slightly off until the next
+  fix lands. The alternative — freezing the icon for four seconds and then
+  teleporting it — is no more truthful and far harder to follow. An aircraft
+  that reports no speed or track is not carried at all.
+- The aircraft card reports the last *measured* position's distance, while
+  the icon is drawn carried forward, so the two can differ by a few seconds
+  of travel. Near the edge of the selected range this can also show an
+  aircraft on the radar a moment before or after it is listed, or the
+  reverse.
 - Sky View works out which way up the page is from gravity rather than from
   the browser, for the reason above. The cost is the uncommon case of a reader
   who has locked rotation *and* turned the device on its side: the horizon is

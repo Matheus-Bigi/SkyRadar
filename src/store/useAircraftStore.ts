@@ -16,13 +16,29 @@ interface AircraftStore {
   current: Aircraft[];
   previousAt: number;
   currentAt: number;
+  /**
+   * The provider's own clock when the newest snapshot was built. Paired with
+   * each aircraft's `lastUpdated` it gives that aircraft's position age — how
+   * stale the fix already was when it was fetched. Both readings come from
+   * the server, so the difference is an age and no clock skew leaks into it.
+   */
+  fetchedAt?: number;
+  /**
+   * The device's clock when that snapshot was *first* seen. The provider
+   * caches for five seconds and we poll every four, so roughly every other
+   * response replays a snapshot we already hold. A replay arrives later but
+   * still describes the instant it was built, so the anchor must not move
+   * with it — otherwise each replay reads as the aircraft standing still,
+   * and the next fresh snapshot as it lurching to catch up.
+   */
+  fetchedAtClient?: number;
   trails: Record<string, TrailPoint[]>;
   removed: Record<string, number>;
   status: DataStatus;
   error?: string;
   source?: string;
 
-  applySnapshot: (aircraft: Aircraft[], source: string) => void;
+  applySnapshot: (aircraft: Aircraft[], source: string, fetchedAt?: number) => void;
   setStatus: (status: DataStatus, error?: string) => void;
 }
 
@@ -35,7 +51,7 @@ export const useAircraftStore = create<AircraftStore>()((set, get) => ({
   removed: {},
   status: "idle",
 
-  applySnapshot: (aircraft, source) => {
+  applySnapshot: (aircraft, source, fetchedAt) => {
     const state = get();
     const now = Date.now();
     const prevIds = new Set(state.current.map((a) => a.id));
@@ -59,11 +75,17 @@ export const useAircraftStore = create<AircraftStore>()((set, get) => ({
       if (now - at < REMOVED_FADE_MS && !newIds.has(id)) removed[id] = at;
     }
 
+    // A replayed snapshot describes the same instant as the one before it,
+    // however much later it arrives.
+    const isReplay = fetchedAt !== undefined && fetchedAt === state.fetchedAt;
+
     set({
       previous: state.current,
       current: aircraft,
       previousAt: state.currentAt || now,
       currentAt: now,
+      fetchedAt,
+      fetchedAtClient: isReplay ? state.fetchedAtClient ?? now : now,
       trails,
       removed,
       status: "ready",

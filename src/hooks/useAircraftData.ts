@@ -51,10 +51,17 @@ export function useAircraftData(position: LatLon | null, rangeMiles: number) {
           const body = (await res.json().catch(() => null)) as { detail?: string } | null;
           throw new Error(body?.detail || `status ${res.status}`);
         }
-        const data = (await res.json()) as { aircraft: unknown; source: string };
+        const data = (await res.json()) as {
+          aircraft: unknown;
+          source: string;
+          fetchedAt?: number;
+        };
         if (cancelled) return;
         failuresRef.current = 0;
-        applySnapshot(data.aircraft as never, data.source);
+        // `fetchedAt` is the provider's clock when the snapshot was built.
+        // Rendering needs it to tell how old each position already was on
+        // arrival; see `interpolateAircraftFrame`.
+        applySnapshot(data.aircraft as never, data.source, data.fetchedAt);
       } catch (err) {
         if (cancelled) return;
         failuresRef.current += 1;
