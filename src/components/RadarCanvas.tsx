@@ -270,7 +270,14 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       const store = useAircraftStore.getState();
       const now = Date.now();
       const frame = interpolateAircraftFrame(
-        { previous: store.previous, current: store.current, previousAt: store.previousAt, currentAt: store.currentAt },
+        {
+          previous: store.previous,
+          current: store.current,
+          previousAt: store.previousAt,
+          currentAt: store.currentAt,
+          fetchedAt: store.fetchedAt,
+          fetchedAtClient: store.fetchedAtClient,
+        },
         store.removed,
         now
       );

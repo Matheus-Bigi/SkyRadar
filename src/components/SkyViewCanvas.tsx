@@ -155,11 +155,12 @@ export default function SkyViewCanvas({
       const now = Date.now();
       const visible: VisibleContact[] = [];
 
-      // Where each aircraft is *now*, rather than where it was when the last
-      // fix landed. Positions arrive every few seconds; drawn raw, a close
-      // aircraft crossing the view jumps a finger's width at a time. The radar
-      // has always glided for this reason — this is the same engine, read the
-      // same way, once a frame and without going through React.
+      // Where each aircraft is *now*, rather than where it was when its
+      // position was measured. Fixes arrive every few seconds and are already
+      // a second or two old on arrival; drawn raw, a close aircraft crossing
+      // the view jumps a finger's width at a time. The engine carries each one
+      // forward on its own reported track and ground speed — the same engine
+      // the radar uses, read the same way, once a frame and outside React.
       const store = useAircraftStore.getState();
       const flown = interpolateAircraftFrame(
         {
@@ -167,20 +168,11 @@ export default function SkyViewCanvas({
           current: store.current,
           previousAt: store.previousAt,
           currentAt: store.currentAt,
+          fetchedAt: store.fetchedAt,
+          fetchedAtClient: store.fetchedAtClient,
         },
         store.removed,
-        now,
-        // Carry the position exactly one interval past the newest fix.
-        //
-        // The factor is not a fudge: t reaches 1 at the moment a fix lands, so
-        // everything after that is dead reckoning, and t = 2 is where a
-        // constant-velocity aircraft will be when the next fix is due. Stop
-        // short of that and the position freezes, then jumps forward when the
-        // fix arrives; run past it and it has to be pulled back. At 2 the
-        // prediction and the arriving fix agree, and the aircraft simply keeps
-        // moving. A late fix holds it one interval ahead rather than letting
-        // it run away.
-        2
+        now
       );
       const livePositions = new Map(flown.map((r) => [r.aircraft.id, r.aircraft]));
 
