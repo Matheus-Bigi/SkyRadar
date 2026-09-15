@@ -5,9 +5,12 @@ import { DataStatus } from "../store/useAircraftStore";
 
 export default function TopBar({
   status,
+  aircraftCount,
   onOpenSettings,
 }: {
   status: DataStatus;
+  /** How many aircraft are on the scope right now, filters and range applied. */
+  aircraftCount: number;
   onOpenSettings: () => void;
 }) {
   const live = status === "ready";
@@ -28,6 +31,28 @@ export default function TopBar({
           <span className="font-mono text-[10px] tracking-widest text-radar-textdim">
             {live ? "LIVE" : status === "offline" ? "OFFLINE" : status === "error" ? "DATA ERROR" : "..."}
           </span>
+          {/*
+            How many aircraft are on the scope, next to the word that says the
+            data is current — the two belong together, and here it survives the
+            control rail being folded away, which is exactly when the rail's own
+            per-category counts are not on screen to add up.
+
+            Only while the feed is live: a count left standing during an outage
+            would describe a scope that has already been cleared.
+          */}
+          {live && (
+            <>
+              <span aria-hidden className="text-radar-panelborder">
+                |
+              </span>
+              <span
+                className="font-mono text-[10px] tabular-nums tracking-widest text-radar-text"
+                aria-label={`${aircraftCount} aircraft shown`}
+              >
+                {aircraftCount}
+              </span>
+            </>
+          )}
         </div>
         <button
           onClick={() => window.location.reload()}
