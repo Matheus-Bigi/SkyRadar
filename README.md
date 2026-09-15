@@ -616,6 +616,33 @@ you somewhere confusing:
 - **Ticking all five collapses to ALL**, so two states that behave identically
   never look different.
 
+**Every row says how many.** Each category carries the number of aircraft in
+it, so the list answers "what do I get if I tick this?" before you tick it,
+and a category with nothing in it reads as empty rather than as a button that
+does nothing.
+
+The numbers are of **what is in range**, not of the whole feed. A promise of
+twenty airliners that turns into six the moment you tick it would be worse
+than no number at all, so they are counted inside the selected range using
+the same 5% headroom the scope draws with — and they change when the range
+does. They also do not depend on what is currently ticked, because the
+question they answer does not.
+
+ALL is exactly the five added up, and the count in the top bar beside LIVE is
+exactly the ticked ones added up. Both come from one computation rather than
+three, which is what keeps them from ever disagreeing. The top bar is the
+right home for the on-screen total because the rail folds away, and that is
+precisely when the per-category numbers are not there to add up yourself. It
+is withdrawn entirely during an outage: a count left standing would describe
+a scope that has already been cleared.
+
+This is why the rail is `w-28` rather than `w-24`. A busy 30 mile scope near a
+hub runs to three digits, and at the old width `MILITARY 142` overflowed its
+row and clipped the number. The 16px comes out of the map, which is a real
+cost — an aircraft four miles east on a 390px phone now sits under the rail
+rather than beside it — but a count you cannot read is worth less than the
+space it occupies, and the rail folds away when the map matters more.
+
 The tick boxes are what make it a multi-select rather than a set of pills
 that happen to allow more than one. Highlighted pills alone read as a
 segmented control — pick another and the first turns off — which is exactly

@@ -60,14 +60,27 @@ function Tick({ on }: { on: boolean }) {
  * ALL sits at the top, above a divider, as the way back to everything. It is
  * ticked precisely when nothing is singled out, so the control always shows
  * one of two readable states: everything, or exactly the categories ticked.
- * The count beside the heading says which without having to scan the list.
+ *
+ * Each row carries how many aircraft are in that category within the current
+ * range, so the list answers "what do I get if I tick this?" before you tick
+ * it — and a category with nothing in it says so rather than looking like a
+ * button that does nothing. The numbers are of what is in range, not of the
+ * whole feed: a promise of twenty airliners that turns into six as soon as
+ * you tick it would be worse than no number at all. They do not depend on
+ * what is currently ticked, because the question they answer does not.
  */
 export default function CategoryFilterBar({
   value,
+  counts,
+  totalInRange,
   onToggle,
   onShowAll,
 }: {
   value: CategoryFilter;
+  /** How many aircraft of each category are within the selected range. */
+  counts: Record<AircraftCategory, number>;
+  /** All of them added up — what ALL stands for. */
+  totalInRange: number;
   onToggle: (c: AircraftCategory) => void;
   onShowAll: () => void;
 }) {
@@ -76,6 +89,19 @@ export default function CategoryFilterBar({
 
   const row =
     "flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left font-mono text-[10px] tracking-wide transition-colors";
+  // A count column that does not shift as digits come and go, and dims when
+  // there is nothing there — an empty category should read as empty at a
+  // glance rather than as a zero to be parsed.
+  const tally = (n: number, lit: boolean) => (
+    <span
+      className={clsx(
+        "ml-auto shrink-0 tabular-nums text-[9px]",
+        n === 0 ? "text-radar-textdim/40" : lit ? "text-radar-green" : "text-radar-textdim"
+      )}
+    >
+      {n}
+    </span>
+  );
   const on = "bg-radar-greendim text-radar-green";
   const off = "text-radar-textdim hover:bg-white/5 hover:text-radar-text";
 
@@ -97,11 +123,12 @@ export default function CategoryFilterBar({
       <button
         onClick={onShowAll}
         aria-pressed={all}
-        aria-label="Show every category"
+        aria-label={`Show every category, ${totalInRange} in range`}
         className={clsx(row, all ? on : off)}
       >
         <Tick on={all} />
         ALL
+        {tally(totalInRange, all)}
       </button>
 
       <div className="mx-1 border-t border-radar-panelborder" />
@@ -113,11 +140,12 @@ export default function CategoryFilterBar({
             key={c}
             onClick={() => onToggle(c)}
             aria-pressed={selected}
-            aria-label={`${LABELS[c].full}${selected ? " (showing)" : ""}`}
+            aria-label={`${LABELS[c].full}, ${counts[c] ?? 0} in range${selected ? ", showing" : ""}`}
             className={clsx(row, selected ? on : off)}
           >
             <Tick on={selected} />
             {LABELS[c].short}
+            {tally(counts[c] ?? 0, selected)}
           </button>
         );
       })}

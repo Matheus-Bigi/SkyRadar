@@ -31,13 +31,13 @@ import { usePhotoPrefetch } from "../hooks/usePhotoPrefetch";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { retryUnavailablePhotos } from "../lib/aircraft/photoClient";
 import { useAircraftStore } from "../store/useAircraftStore";
-import { useRadarStore, categoryFilterMatches } from "../store/useRadarStore";
+import { useRadarStore, categoryFilterMatches, ALL_CATEGORIES } from "../store/useRadarStore";
 import { useSelectionStore } from "../store/useSelectionStore";
 import { usePreferencesStore } from "../store/usePreferencesStore";
 import { deriveGeometry, distanceMeters, feetToMeters, milesToMeters } from "../lib/geo";
 import { nearbyAirports } from "../lib/airports";
 import { primeAudio } from "../lib/audio/radarBeep";
-import { Aircraft } from "../lib/aircraft/types";
+import { Aircraft, AircraftCategory } from "../lib/aircraft/types";
 
 /** How long a selected aircraft may be missing before the card lets go. */
 const SELECTION_GRACE_MS = 15_000;
@@ -96,18 +96,52 @@ export default function SkyRadarApp() {
 
   useAutoRefresh({ busy, onRefresh: softRefresh });
 
-  // Derived directly from the data store (not from canvas rendering) so the
-  // empty state stays correct even if the map's tiles are slow or fail to
-  // load — data presence and visual rendering are independent concerns.
-  const visibleAircraftCount = useMemo(() => {
-    if (!geo.position) return 0;
+  // How many aircraft of each category are within the selected range.
+  //
+  // Deliberately independent of the category filter: the point of these
+  // numbers is to say what you would get if you ticked a category, which has
+  // nothing to do with what is ticked now. Derived from the data store rather
+  // than from canvas rendering, so they stay right even if the map's tiles
+  // are slow or fail — data presence and visual rendering are independent.
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      AIRLINE: 0,
+      MILITARY: 0,
+      HELICOPTER: 0,
+      GENERAL_AVIATION: 0,
+      OTHER: 0,
+    } as Record<AircraftCategory, number>;
+    if (!geo.position) return counts;
+    // The same 5% headroom the scope draws with, so the count agrees with
+    // what is on screen rather than with the outer ring.
     const rangeMetersLimit = milesToMeters(radar.rangeMiles) * 1.05;
-    return aircraftStore.current.filter(
-      (a) =>
-        categoryFilterMatches(radar.categoryFilter, a.category) &&
-        distanceMeters(geo.position!, { latitude: a.latitude, longitude: a.longitude }) <= rangeMetersLimit
-    ).length;
-  }, [aircraftStore, geo.position, radar.rangeMiles, radar.categoryFilter]);
+    for (const a of aircraftStore.current) {
+      const within =
+        distanceMeters(geo.position, { latitude: a.latitude, longitude: a.longitude }) <=
+        rangeMetersLimit;
+      if (within) counts[a.category] += 1;
+    }
+    return counts;
+  }, [aircraftStore, geo.position, radar.rangeMiles]);
+
+  // What is actually on the scope right now: the categories being shown,
+  // added up. Summing the same figures the rail displays is what keeps the
+  // two honest with each other — ALL always equals the sum of the five, and
+  // the on-screen total always equals the sum of the ticked ones.
+  const visibleAircraftCount = useMemo(
+    () =>
+      ALL_CATEGORIES.reduce(
+        (n, c) => n + (categoryFilterMatches(radar.categoryFilter, c) ? categoryCounts[c] : 0),
+        0
+      ),
+    [categoryCounts, radar.categoryFilter]
+  );
+
+  /** Everything in range, whatever is ticked — the number ALL stands for. */
+  const inRangeAircraftCount = useMemo(
+    () => ALL_CATEGORIES.reduce((n, c) => n + categoryCounts[c], 0),
+    [categoryCounts]
+  );
 
   const selectedAircraft = useMemo<Aircraft | null>(() => {
     if (!selection.selectedAircraftId) return null;
@@ -200,7 +234,7 @@ export default function SkyRadarApp() {
   return (
     <main
       className="relative h-full w-full select-none overflow-hidden bg-radar-bg"
-      style={{ "--rail-inset": railCollapsed ? "0.75rem" : "7rem" } as React.CSSProperties}
+      style={{ "--rail-inset": railCollapsed ? "0.75rem" : "8rem" } as React.CSSProperties}
     >
       <MapView
         center={geo.position}
@@ -249,7 +283,11 @@ export default function SkyRadarApp() {
 
       <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-3">
         <div className="flex-1">
-          <TopBar status={aircraftStore.status} onOpenSettings={() => setSettingsOpen(true)} />
+          <TopBar
+            status={aircraftStore.status}
+            aircraftCount={visibleAircraftCount}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
         </div>
       </div>
 
@@ -262,7 +300,11 @@ export default function SkyRadarApp() {
       <div
         id="control-rail"
         className={clsx(
-          "no-scrollbar absolute bottom-3 right-3 top-16 z-20 flex w-24 flex-col items-stretch gap-2 overflow-y-auto",
+          // w-28 rather than w-24: the category rows now carry a count, and a
+          // busy 30 mile scope near a hub runs to three digits. At the old
+          // width "MILITARY 196" overflowed its row by a few pixels and the
+          // number was clipped — a count you cannot read is worse than none.
+          "no-scrollbar absolute bottom-3 right-3 top-16 z-20 flex w-28 flex-col items-stretch gap-2 overflow-y-auto",
           "transition-[transform,visibility] duration-200 ease-out motion-reduce:transition-none",
           // `invisible` rather than only sliding it off: a control parked
           // off-screen is still in the tab order and still read out, and a
@@ -347,6 +389,8 @@ export default function SkyRadarApp() {
         <div className="shrink-0">
           <CategoryFilterBar
             value={radar.categoryFilter}
+            counts={categoryCounts}
+            totalInRange={inRangeAircraftCount}
             onToggle={radar.toggleCategory}
             onShowAll={radar.showAllCategories}
           />
@@ -397,7 +441,7 @@ export default function SkyRadarApp() {
 
       {/* Bottom-left, clear of both the scope's centre and the control rail. */}
       {selectedAircraft && geometry && !selection.lookHereActive && (
-        <div className="absolute bottom-3 left-3 right-[var(--rail-inset,7rem)] z-20 max-w-sm transition-[right] duration-200 ease-out motion-reduce:transition-none">
+        <div className="absolute bottom-3 left-3 right-[var(--rail-inset,8rem)] z-20 max-w-sm transition-[right] duration-200 ease-out motion-reduce:transition-none">
           <AircraftCard
             aircraft={selectedAircraft}
             geometry={geometry}
