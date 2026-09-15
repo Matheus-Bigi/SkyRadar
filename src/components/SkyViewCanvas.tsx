@@ -4,7 +4,9 @@ import { useEffect, useRef } from "react";
 import { Aircraft } from "../lib/aircraft/types";
 import { LatLon, deriveGeometry, feetToMeters, toRad } from "../lib/geo";
 import { fmtAltitude, fmtMiles, fmtSpeed } from "../lib/format";
-import { Attitude, apparentTrackDeg, projectSky, searchRadiusDeg } from "../lib/ar/projection";
+import { Attitude, SEARCH_RADIUS_DEG, apparentTrackDeg, projectSky } from "../lib/ar/projection";
+import { interpolateAircraftFrame } from "../lib/render/interpolate";
+import { useAircraftStore } from "../store/useAircraftStore";
 import { LabelDetail, contactAlpha, contactScale, depthProminence, labelDetailFor } from "../lib/ar/depth";
 import { drawSilhouette } from "../lib/render/silhouettes";
 import { THEME } from "../lib/render/theme";
@@ -153,7 +155,39 @@ export default function SkyViewCanvas({
       const now = Date.now();
       const visible: VisibleContact[] = [];
 
-      for (const a of s.aircraft) {
+      // Where each aircraft is *now*, rather than where it was when the last
+      // fix landed. Positions arrive every few seconds; drawn raw, a close
+      // aircraft crossing the view jumps a finger's width at a time. The radar
+      // has always glided for this reason — this is the same engine, read the
+      // same way, once a frame and without going through React.
+      const store = useAircraftStore.getState();
+      const flown = interpolateAircraftFrame(
+        {
+          previous: store.previous,
+          current: store.current,
+          previousAt: store.previousAt,
+          currentAt: store.currentAt,
+        },
+        store.removed,
+        now,
+        // Carry the position exactly one interval past the newest fix.
+        //
+        // The factor is not a fudge: t reaches 1 at the moment a fix lands, so
+        // everything after that is dead reckoning, and t = 2 is where a
+        // constant-velocity aircraft will be when the next fix is due. Stop
+        // short of that and the position freezes, then jumps forward when the
+        // fix arrives; run past it and it has to be pulled back. At 2 the
+        // prediction and the arriving fix agree, and the aircraft simply keeps
+        // moving. A late fix holds it one interval ahead rather than letting
+        // it run away.
+        2
+      );
+      const livePositions = new Map(flown.map((r) => [r.aircraft.id, r.aircraft]));
+
+      for (const listed of s.aircraft) {
+        // The list decides which aircraft are on screen and which is the
+        // target; the interpolation only decides where they are.
+        const a = livePositions.get(listed.id) ?? listed;
         const geometry = deriveGeometry(
           s.userPosition,
           s.userAltitudeMeters,
@@ -168,12 +202,7 @@ export default function SkyViewCanvas({
           viewport
         );
 
-        const spreadDeg = searchRadiusDeg({
-          distanceMeters: geometry.distanceMeters,
-          groundSpeedKt: a.groundSpeed,
-          dataAgeMs: now - a.lastUpdated,
-        });
-        const radius = Math.max(26, focal * Math.tan(toRad(spreadDeg)));
+        const radius = Math.max(26, focal * Math.tan(toRad(SEARCH_RADIUS_DEG)));
         const selected = a.id === s.selectedAircraftId;
 
         if (projected.behind) {

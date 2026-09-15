@@ -27,12 +27,21 @@ export interface InterpolationInput {
 export function interpolateAircraftFrame(
   { previous, current, previousAt, currentAt }: InterpolationInput,
   removed: Record<string, number>,
-  now: number
+  now: number,
+  /**
+   * How far past the newest fix a position may be carried, as a multiple of
+   * the gap between fixes. Note that t reaches 1 as a fix lands, so anything
+   * above 1 is dead reckoning and 2 is where the aircraft should be when the
+   * next fix is due. The default stops a little short, which the radar can
+   * afford; Sky View passes 2, because through a camera the resulting stall
+   * and jump are the most obvious movement on screen.
+   */
+  maxExtrapolateFactor: number = MAX_EXTRAPOLATE_FACTOR
 ): RenderedAircraft[] {
   const previousById = new Map(previous.map((a) => [a.id, a]));
   const span = currentAt - previousAt;
   const rawT = span > 0 ? (now - previousAt) / span : 1;
-  const t = Math.max(0, Math.min(rawT, MAX_EXTRAPOLATE_FACTOR));
+  const t = Math.max(0, Math.min(rawT, maxExtrapolateFactor));
 
   const result: RenderedAircraft[] = [];
 
