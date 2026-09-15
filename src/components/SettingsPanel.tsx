@@ -90,6 +90,15 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
         </Section>
 
         <Section title="SKY VIEW">
+          {/*
+            The master switch, moved here when the Layers panel was folded
+            into Settings. It was the only thing Layers offered that this
+            panel did not already carry — radar sweep, radar sound, trails and
+            airports all appear above, and listing them twice would have meant
+            two controls for one setting. Turning this off takes Sky View out
+            of the view list beside MAP and RADAR.
+          */}
+          <ToggleRow label="Sky View mode" {...bool("skyViewEnabled")} />
           <ToggleRow label="AR labels" {...bool("arLabelsEnabled")} />
           <ToggleRow label="Distance display" {...bool("arDistanceDisplay")} />
         </Section>

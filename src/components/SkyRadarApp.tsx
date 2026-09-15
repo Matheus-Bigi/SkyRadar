@@ -12,7 +12,6 @@ import ModeToggle from "./ModeToggle";
 import CategoryFilterBar from "./CategoryFilterBar";
 import CompassWidget from "./CompassWidget";
 import CompassCalibration from "./CompassCalibration";
-import LayersPanel from "./LayersPanel";
 import SettingsPanel from "./SettingsPanel";
 import AircraftCard from "./AircraftCard";
 import LookHereOverlay from "./LookHereOverlay";
@@ -58,7 +57,6 @@ export default function SkyRadarApp() {
 
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [layersOpen, setLayersOpen] = useState(false);
   const [skyViewOpen, setSkyViewOpen] = useState(false);
   const [calibrationOpen, setCalibrationOpen] = useState(false);
 
@@ -93,7 +91,6 @@ export default function SkyRadarApp() {
     selection.lookHereActive ||
     skyViewOpen ||
     settingsOpen ||
-    layersOpen ||
     calibrationOpen ||
     Boolean(selection.overlapChoices);
 
@@ -331,7 +328,16 @@ export default function SkyRadarApp() {
         </button>
 
         <div className="shrink-0">
-          <ModeToggle value={radar.mode} onChange={radar.setMode} />
+          <ModeToggle
+            value={radar.mode}
+            onChange={radar.setMode}
+            skyViewAvailable={prefs.skyViewEnabled}
+            skyViewActive={skyViewOpen}
+            onSkyView={() => {
+              primeAudio();
+              setSkyViewOpen(true);
+            }}
+          />
         </div>
 
         <div className="shrink-0">
@@ -358,28 +364,8 @@ export default function SkyRadarApp() {
           </button>
         )}
 
-        <button
-          onClick={() => setLayersOpen((v) => !v)}
-          aria-pressed={layersOpen}
-          className="shrink-0 rounded-lg border border-radar-panelborder bg-radar-panel/80 px-2 py-1.5 font-mono text-[11px] tracking-wide text-radar-textdim backdrop-blur-sm hover:text-radar-text"
-        >
-          LAYERS
-        </button>
-
-        {prefs.skyViewEnabled && (
-          <button
-            onClick={() => {
-              primeAudio();
-              setSkyViewOpen(true);
-            }}
-            className="shrink-0 rounded-lg bg-radar-green/90 px-2 py-1.5 font-mono text-[11px] tracking-wide text-black shadow-glow"
-          >
-            SKY VIEW
-          </button>
-        )}
       </div>
 
-      {layersOpen && <LayersPanel onClose={() => setLayersOpen(false)} />}
       {calibrationOpen && (
         <CompassCalibration heading={heading} onClose={() => setCalibrationOpen(false)} />
       )}

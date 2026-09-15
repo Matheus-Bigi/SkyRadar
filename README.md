@@ -42,8 +42,8 @@ answers two questions Flightradar24 doesn't:
 > "Where do I **look** to see it?"
 
 Everything in the design — the radar sweep, the compass, Look Here, Sky View —
-serves that. See the in-app Settings/Layers panels for the full set of
-controls; there is intentionally no second screen.
+serves that. See the in-app Settings panel for the full set of controls;
+there is intentionally no second screen.
 
 ## Architecture
 
@@ -64,8 +64,9 @@ SkyViewEngine         → src/components/SkyView.tsx (camera + guidance)
                         src/components/SkyViewCanvas.tsx (the HUD)
                         src/lib/ar/projection.ts (sky → screen)
                         src/lib/ar/attitude.ts (sensor angles → pitch/roll)
-LayerManager /
 SettingsManager       → src/store/usePreferencesStore.ts (persisted)
+                        src/components/SettingsPanel.tsx (one panel, no
+                        second “Layers” list — see The control rail)
 ```
 
 **Range rings.** The scope draws three rings, at a third, two thirds and
@@ -170,6 +171,86 @@ it's active, and this should never be set in a real deployment.
 If a real provider's request fails (rate-limited, network error, etc.),
 `/api/aircraft` returns an error and the app shows a "LIVE DATA UNAVAILABLE"
 status — it never silently substitutes fake aircraft.
+
+## Where the data comes from
+
+Everything on screen, and what supplies it.
+
+| What you see | Source | Kind | Key? | Path |
+|---|---|---|---|---|
+| Background map | Esri "World Dark Gray" (base + labels) → OpenStreetMap | Third-party raster tiles | No | Browser → tile CDN |
+| Aircraft positions & telemetry | adsb.lol → airplanes.live → adsb.fi → OpenSky | Community ADS-B, live | No | Browser → `/api/aircraft` → aggregator |
+| Aircraft photos | Planespotters → airport-data.com | Third-party photo API | No | Browser → `/api/aircraft/photo` → upstream |
+| Your neighbourhood name | Nominatim (OpenStreetMap) | Third-party geocoder | No | Browser → `/api/geocode/reverse` → Nominatim |
+| Airports on the scope | `src/lib/airports.ts` | Bundled reference data (~60) | — | Ships with the app, never fetched |
+| Airline names | `src/lib/aircraft/airlines.ts` | Bundled ICAO designators | — | Ships with the app |
+| Category & silhouette | `src/lib/aircraft/classify.ts` | Derived in-app from ADS-B hints | — | Pure logic |
+| Your location | Device GPS (`watchPosition`) | Device sensor | — | Leaves the device only as a rounded lat/lon in a query |
+| Compass, pitch, roll | `deviceorientation(absolute)`, `devicemotion` | Device sensors | — | Never leaves the device |
+| Camera (Sky View) | `getUserMedia`, rear camera | Device sensor | — | Never leaves the device |
+| Range, filters, units, N-UP | `localStorage` (`skyradar:preferences`) | Your own browser | — | Never leaves the device |
+| Radar beep | `AudioContext` oscillator | Synthesised in-app | — | No audio file |
+
+### The aircraft failover chain
+
+`/api/aircraft` tries these in order and returns the first that answers,
+sharing one request deadline so several attempts still fit inside a
+serverless budget.
+
+| # | Provider | Endpoint | Key | Why this rank |
+|---|---|---|---|---|
+| 0 | Flightradar24 | `FR24_API_BASE_URL` | **Paid**, only if `FR24_API_KEY` is set | Richest metadata; the only source of origin/destination |
+| 1 | adsb.lol | `api.adsb.lol/v2/lat/…/lon/…/dist/…` | None | Keyless, answers a radius query, reports the most real detail |
+| 2 | airplanes.live | `api.airplanes.live/v2/point/…` | None | Same readsb/tar1090 JSON shape |
+| 3 | adsb.fi | `opendata.adsb.fi/api/v2/…` | None | Same shape again |
+| 4 | OpenSky | `OPENSKY_API_BASE_URL` | Optional user/pass | Last: its anonymous tier quotas by source IP, which a shared serverless address exhausts |
+| — | Local simulator | in-process | — | **Never automatic.** Only when `AIRCRAFT_PROVIDER=mock` |
+
+If every source fails the app shows **LIVE DATA UNAVAILABLE** and clears the
+scope rather than inventing traffic.
+
+### One aircraft, field by field
+
+| Field on the card | ADS-B key | Origin |
+|---|---|---|
+| Position, altitude | `lat`/`lon`, `alt_geom` ?? `alt_baro` | Broadcast by the aircraft |
+| Ground speed, track | `gs`, `track` ?? `true_heading` ?? `mag_heading` | Broadcast by the aircraft |
+| Vertical speed | `baro_rate` ?? `geom_rate` | Broadcast by the aircraft |
+| Position age (`lastUpdated`) | `seen_pos` | The aggregator's receiver |
+| Registration, type, model, owner/operator | `r`, `t`, `desc`, `ownOp` | The aggregators' shared airframe database |
+| Military flag | `dbFlags` bit 0 | The aggregators' shared airframe database |
+| Callsign | `flight` | Broadcast by the aircraft |
+| Airline | — | Derived in-app from the callsign's published ICAO designator |
+| Category, silhouette | — | Derived in-app from type, model, operator and emitter category |
+| Distance, bearing, elevation | — | Computed in-app from your GPS and its position |
+| Outside air temperature | `oat` | Flightradar24 only — never from ADS-B |
+| Origin / destination | — | Flightradar24 only; the keyless chain carries no route at all |
+
+A field a provider does not report is left undefined and the UI hides it —
+no placeholder, no estimate.
+
+### Caching and freshness
+
+| Layer | Lifetime | Where |
+|---|---|---|
+| Aircraft snapshot | 5s per location | Server, in memory (`adsb.ts`) |
+| Browser poll | every 4s | `useAircraftData` |
+| Position age filter | drops anything over 60s | `adsb.ts` |
+| Photo lookup | per hex/registration | Server |
+| Preferences | indefinite | `localStorage` |
+
+The five-second cache against a four-second poll means roughly every other
+poll returns a replay. That is harmless now that positions are dated by the
+provider's clock rather than by arrival (see [Carrying an aircraft between
+fixes](#carrying-an-aircraft-between-fixes)), and tightening it would double
+the request rate against a free keyless aggregator, so it stands.
+
+### Diagnostics
+
+- **`/api/aircraft/diagnostics?lat=&lon=&rangeMiles=`** — which source
+  answered, how fast, what each failed with, and the nearest few aircraft.
+- **`/api/aircraft/details-diagnostics?hex=&registration=`** — every photo
+  source's HTTP status and a raw response excerpt. Bypasses every cache.
 
 ## Identifying one aircraft
 
@@ -515,6 +596,23 @@ Every control on the radar page lives in one rail down the right-hand side.
 They used to sit across the bottom of the screen, where they covered the
 lower part of the scope — exactly where aircraft to the south appear.
 
+**What the rail holds, and what it no longer does.** Top to bottom: the
+compass, the heading-up and lock toggles, the view (MAP / RADAR / SKY VIEW),
+the range, the category filter, and full screen.
+
+Sky View sits in the view group rather than beside it because it is a third
+way of looking at the same traffic, not a feature to switch on. That it opens
+as an overlay instead of changing a mode is an implementation detail, and the
+old styling — a filled green button off on its own — announced it as
+something else entirely.
+
+There is no Layers panel. It listed five toggles and Settings already carried
+four of them under clearer names: radar sweep, radar sound, aircraft trails
+and airports. Two panels for one set of preferences meant two places to look
+and two controls for the same switch. Only the Sky View master toggle was
+unique to Layers, and that has moved into Settings' own SKY VIEW section
+alongside the AR options it governs.
+
 On a phone that rail is about a quarter of the screen's width, and the map
 underneath it is the point of the app, so it folds away: **HIDE ›** at the top
 of the rail tucks it off the right edge, and a **‹** tab at the screen's edge
@@ -525,9 +623,9 @@ Two details make it behave:
 
 - **Everything beside the rail is anchored to one distance from the right
   edge**, published as a CSS custom property on the page. The aircraft card,
-  the Layers panel and the compass calibration panel all read it, so folding
-  the rail moves all of them together and there is a single place to get it
-  right — rather than four components each guessing at the rail's width.
+  and the compass calibration panel both read it, so folding the rail moves
+  them together and there is a single place to get it right — rather than
+  several components each guessing at the rail's width.
 - **The handle lives inside the rail while it is open**, not floating beside
   it, so an open rail costs the map no more room than it already did. Only
   the folded state needs a tab of its own, and that sits hard against the
