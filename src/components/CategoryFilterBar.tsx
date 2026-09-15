@@ -9,6 +9,12 @@ const FILTERS: { value: CategoryFilter; label: string }[] = [
   { value: "MILITARY", label: "MILITARY" },
   { value: "HELICOPTER", label: "HELI" },
   { value: "GENERAL_AVIATION", label: "GA" },
+  // Everything the classifier could not place — gliders, balloons, drones,
+  // and any airframe whose type it does not recognise. The category has
+  // always existed and aircraft have always been put in it; without a filter
+  // for it, "ALL" was the only way to see them and there was no way to see
+  // them alone.
+  { value: "OTHER", label: "OTHER" },
 ];
 
 export default function CategoryFilterBar({
