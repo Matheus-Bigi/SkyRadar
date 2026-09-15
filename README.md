@@ -600,6 +600,41 @@ lower part of the scope — exactly where aircraft to the south appear.
 compass, the heading-up and lock toggles, the view (MAP / RADAR / SKY VIEW),
 the range, the category filter, and full screen.
 
+**The category filter takes more than one.** "Military and gliders" is an
+ordinary thing to want and the old control could not express it: one value,
+`"ALL" | AircraftCategory`, so picking a second category dropped the first.
+It is now a list, and the rules around it are chosen so a tap can never leave
+you somewhere confusing:
+
+- An **empty list means everything**. There is deliberately no way to say
+  "show nothing" — a scope emptied by its own filter looks exactly like a
+  dead feed.
+- From ALL, the **first tap narrows** to just that category, which is what
+  picking one thing out of a list means everywhere else.
+- **Unticking the last one goes back to ALL** rather than to an empty sky, so
+  there is no dead end to get into.
+- **Ticking all five collapses to ALL**, so two states that behave identically
+  never look different.
+
+The tick boxes are what make it a multi-select rather than a set of pills
+that happen to allow more than one. Highlighted pills alone read as a
+segmented control — pick another and the first turns off — which is exactly
+what this used to be, so nothing on screen would have said the behaviour had
+changed. A `SHOW 3/5` count beside the heading says how much is hidden
+without having to read down the list.
+
+The check inside each box is a drawn path, not the character ✓. As text it
+lands in the button's own text content, so every row reads `✓ALL`, `✓HELI`
+and so on — invisible when unticked, but there for anything that reads,
+matches or copies the label.
+
+The filter is persisted, so the shape change needed a migration rather than a
+type change: a v1 `"MILITARY"` becomes `["MILITARY"]` and `"ALL"` becomes
+`[]`. The matcher also refuses to trust the shape, treating a non-array as
+"show everything" — because a stale string would take neither branch cleanly
+(`"ALL".includes("MILITARY")` is `false`) and silently hide every aircraft on
+screen, which looks like an outage rather than a bug.
+
 Sky View sits in the view group rather than beside it because it is a third
 way of looking at the same traffic, not a feature to switch on. That it opens
 as an overlay instead of changing a mode is an implementation detail, and the

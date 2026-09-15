@@ -31,7 +31,7 @@ import { usePhotoPrefetch } from "../hooks/usePhotoPrefetch";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { retryUnavailablePhotos } from "../lib/aircraft/photoClient";
 import { useAircraftStore } from "../store/useAircraftStore";
-import { useRadarStore } from "../store/useRadarStore";
+import { useRadarStore, categoryFilterMatches } from "../store/useRadarStore";
 import { useSelectionStore } from "../store/useSelectionStore";
 import { usePreferencesStore } from "../store/usePreferencesStore";
 import { deriveGeometry, distanceMeters, feetToMeters, milesToMeters } from "../lib/geo";
@@ -104,7 +104,7 @@ export default function SkyRadarApp() {
     const rangeMetersLimit = milesToMeters(radar.rangeMiles) * 1.05;
     return aircraftStore.current.filter(
       (a) =>
-        (radar.categoryFilter === "ALL" || a.category === radar.categoryFilter) &&
+        categoryFilterMatches(radar.categoryFilter, a.category) &&
         distanceMeters(geo.position!, { latitude: a.latitude, longitude: a.longitude }) <= rangeMetersLimit
     ).length;
   }, [aircraftStore, geo.position, radar.rangeMiles, radar.categoryFilter]);
@@ -176,7 +176,7 @@ export default function SkyRadarApp() {
 
   const skyViewAircraft = useMemo(() => {
     return aircraftStore.current.filter(
-      (a) => radar.categoryFilter === "ALL" || a.category === radar.categoryFilter
+      (a) => categoryFilterMatches(radar.categoryFilter, a.category)
     );
   }, [aircraftStore, radar.categoryFilter]);
 
@@ -345,7 +345,11 @@ export default function SkyRadarApp() {
         </div>
 
         <div className="shrink-0">
-          <CategoryFilterBar value={radar.categoryFilter} onChange={radar.setCategoryFilter} />
+          <CategoryFilterBar
+            value={radar.categoryFilter}
+            onToggle={radar.toggleCategory}
+            onShowAll={radar.showAllCategories}
+          />
         </div>
 
         {fullscreen.supported && (
