@@ -485,13 +485,23 @@ the most annoying way, confidently. So Sky View marks a patch of sky, says
 how far to turn and tilt to bring it into view, and leaves the last step to
 the eyes, which are far better at it than any marker.
 
-**How big the patch is.** `searchRadiusDeg()` in `src/lib/ar/projection.ts`
-combines two real errors — the compass's own (8° by default) and how far the
-aircraft has flown since its last report (its ground speed times the age of
-the data, as an angle at that distance) — and takes the root of the sum of
-squares, clamped to 5–45°. A fast jet on stale data gets a wide circle; a
-helicopter a mile away on a fresh report gets a tight one. The circle is
-honest about the uncertainty rather than hiding it.
+**How big the patch is.** `SEARCH_RADIUS_DEG` in `src/lib/ar/projection.ts`
+is one number — 14° of sky — the same for every aircraft at every moment.
+
+It did not start that way. The radius used to be computed per aircraft from
+the compass error and from how far the aircraft had flown since its last
+report, which was defensible and unusable: fixes arrive every four seconds,
+so the circle swelled for four seconds, snapped back when one landed, and
+swelled again. A ring that breathes cannot be measured against. The moment
+the mode actually earns its keep is the moment you have the aircraft in
+sight and want to know how close the app really is — and that is exactly
+when a changing ring stops answering the question.
+
+Fixed is also the more honest shape. The error that dominates out here is
+the compass, and compass error is *angular*: it does not care how far away
+the aircraft is or how fast it is going. The old formula's second term
+mostly added motion, not information. 14° is sized generously, once, for
+the days when the fix is stale and the heading is a few degrees out.
 
 **Where the sky maps onto the screen.** The aircraft's bearing and elevation
 become a unit vector in east/north/up; the device's heading and pitch give a
@@ -501,6 +511,23 @@ A target behind you is reported as such rather than projected to a nonsense
 point. The camera's field of view is an estimate (63°) because cameras don't
 report it — the search area is wide enough that a few degrees either way
 changes nothing.
+
+**Why the silhouettes glide.** Positions arrive every four seconds. Drawn
+raw, an aircraft crossing overhead jumps a finger's width at a time — barely
+noticeable on the radar, glaring through a camera, where the sky behind it is
+moving smoothly and the icon is not. So Sky View reads the same interpolation
+engine the radar has always used (`src/lib/render/interpolate.ts`), once per
+animation frame and outside React, and draws each aircraft where it *is* now
+rather than where the last fix put it.
+
+One detail matters: `t` in that engine reaches 1 at the instant a fix lands,
+so everything past 1 is dead reckoning. The radar's default stops a little
+short of the next fix, which it can afford. Sky View passes 2 — exactly one
+interval ahead, where a constant-velocity aircraft will be when the next fix
+is due. Stop short of that and the icon stalls and then lurches forward; run
+past it and the arriving fix drags it back. At 2 the prediction and the fix
+agree, and the motion is even. The parameter is optional and defaults to the
+radar's old value, so the radar's behaviour is untouched.
 
 **Which way to turn.** The guidance bar gives one instruction per axis:
 `TURN LEFT 40° · LOOK UP 25°`. When an axis rounds to zero it says `ON
@@ -724,11 +751,18 @@ device — they're used purely as an AR background.
   cannot see through clouds, buildings, or terrain. It shows where an
   aircraft's position and altitude place it relative to your current
   heading, approximated from the device's compass and orientation sensors.
-- The size of the Sky View search area is a calculated estimate of the error,
-  not a guarantee. It accounts for the compass and for how stale the position
-  is; it does not account for a miscalibrated device, magnetic interference
-  from a car or a case, or an aircraft that manoeuvred since its last report.
-  Tap the compass dial on the radar page to correct a known offset.
+- The Sky View search area is a fixed 14°, chosen to cover a typical bad day,
+  not a per-aircraft guarantee. It is generous enough for ordinary compass
+  error and a stale fix; it cannot cover a badly miscalibrated device,
+  magnetic interference from a car or a case, or an aircraft that manoeuvred
+  hard since its last report. Tap the compass dial on the radar page to
+  correct a known offset.
+- Between fixes, Sky View shows where an aircraft *should* be, carried
+  forward from its last reported position, speed and track. That is a
+  prediction, not a measurement: an aircraft that turns or changes speed
+  mid-interval will be drawn slightly off until the next fix lands. The
+  alternative — freezing the icon for four seconds and then teleporting it —
+  is no more truthful and far harder to follow.
 - Sky View works out which way up the page is from gravity rather than from
   the browser, for the reason above. The cost is the uncommon case of a reader
   who has locked rotation *and* turned the device on its side: the horizon is

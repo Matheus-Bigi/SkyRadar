@@ -148,20 +148,22 @@ export function projectSky(target: SkyTarget, attitude: Attitude, viewport: View
  * Added in quadrature because they are independent errors, then floored so
  * the marked area never implies more confidence than anyone should have.
  */
-export function searchRadiusDeg(opts: {
-  distanceMeters: number;
-  groundSpeedKt?: number;
-  dataAgeMs: number;
-  compassErrorDeg?: number;
-}): number {
-  const compass = opts.compassErrorDeg ?? 8;
-  const metresPerSecond = ((opts.groundSpeedKt ?? 250) * 1852) / 3600;
-  const driftMetres = metresPerSecond * Math.max(0, opts.dataAgeMs) / 1000;
-  const distance = Math.max(1, opts.distanceMeters);
-  const motion = toDeg(Math.atan2(driftMetres, distance));
-  const combined = Math.sqrt(compass * compass + motion * motion);
-  return Math.max(5, Math.min(45, combined));
-}
+/**
+ * How big the search area is drawn, in degrees of sky. One number, the same
+ * for every aircraft at every moment.
+ *
+ * It used to be computed from how stale the position was, which was defensible
+ * and unusable: fixes arrive every four seconds, so the circle swelled for
+ * four seconds, snapped back when one landed, and swelled again. A ring that
+ * breathes cannot be measured against — the moment you have the aircraft in
+ * sight and want to know how close the app really is, the answer keeps moving.
+ *
+ * Fixed is also the honest shape for it. The error that dominates out here is
+ * the compass, and compass error is angular: it does not care how far away the
+ * aircraft is or how fast it is going. Sized generously, once, for the days
+ * when the fix is stale and the heading is a few degrees out.
+ */
+export const SEARCH_RADIUS_DEG = 14;
 
 /** Shortest signed turn, in degrees, from one bearing to another. */
 export function turnToward(fromDeg: number, toDeg_: number): number {
