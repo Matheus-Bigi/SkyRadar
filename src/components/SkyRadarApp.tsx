@@ -24,6 +24,8 @@ import OverlapPicker from "./OverlapPicker";
 
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceHeading } from "../hooks/useDeviceHeading";
+import { useWakeLock } from "../hooks/useWakeLock";
+import { useFullscreen } from "../hooks/useFullscreen";
 import { useAircraftData } from "../hooks/useAircraftData";
 import { useReverseGeocode } from "../hooks/useReverseGeocode";
 import { usePhotoPrefetch } from "../hooks/usePhotoPrefetch";
@@ -44,6 +46,11 @@ const SELECTION_GRACE_MS = 15_000;
 export default function SkyRadarApp() {
   const geo = useGeolocation(false);
   const heading = useDeviceHeading();
+  // Held for as long as the app is on screen, entry screen included. Watching
+  // for aircraft is mostly standing still and looking up, which is exactly
+  // what a phone reads as idle.
+  useWakeLock();
+  const fullscreen = useFullscreen();
   const radar = useRadarStore();
   const prefs = usePreferencesStore();
   const selection = useSelectionStore();
@@ -335,6 +342,22 @@ export default function SkyRadarApp() {
           <CategoryFilterBar value={radar.categoryFilter} onChange={radar.setCategoryFilter} />
         </div>
 
+        {fullscreen.supported && (
+          <button
+            onClick={fullscreen.toggle}
+            aria-pressed={fullscreen.active}
+            aria-label={fullscreen.active ? "Leave full screen" : "Fill the screen"}
+            className={clsx(
+              "shrink-0 rounded-lg border px-2 py-1.5 font-mono text-[10px] tracking-wide backdrop-blur-sm",
+              fullscreen.active
+                ? "border-radar-green/40 bg-radar-panel/80 text-radar-green"
+                : "border-radar-panelborder bg-radar-panel/80 text-radar-textdim hover:text-radar-text"
+            )}
+          >
+            {fullscreen.active ? "EXIT FULL" : "FULLSCREEN"}
+          </button>
+        )}
+
         <button
           onClick={() => setLayersOpen((v) => !v)}
           aria-pressed={layersOpen}
@@ -423,6 +446,7 @@ export default function SkyRadarApp() {
           rangeMiles={radar.rangeMiles}
           onSelect={(id) => selection.select(id)}
           onExit={() => setSkyViewOpen(false)}
+          fullscreen={fullscreen}
           prefs={{ arLabelsEnabled: prefs.arLabelsEnabled, arDistanceDisplay: prefs.arDistanceDisplay }}
         />
       )}

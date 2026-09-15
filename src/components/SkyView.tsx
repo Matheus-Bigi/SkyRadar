@@ -8,6 +8,7 @@ import { categoryLabel, fmtAltitude, fmtMiles, fmtSpeed } from "../lib/format";
 import { useDeviceHeading } from "../hooks/useDeviceHeading";
 import { useDeviceAttitude } from "../hooks/useDeviceAttitude";
 import { turnToward } from "../lib/ar/projection";
+import type { FullscreenState } from "../hooks/useFullscreen";
 import SkyViewCanvas, { SkyMarker } from "./SkyViewCanvas";
 
 /**
@@ -112,6 +113,8 @@ export interface SkyViewProps {
   onSelect: (id: string | null) => void;
   onExit: () => void;
   prefs: SkyViewPrefs;
+  /** Offered here too: this is the view the browser's own chrome costs most. */
+  fullscreen: FullscreenState;
 }
 
 /**
@@ -135,6 +138,7 @@ export default function SkyView({
   onSelect,
   onExit,
   prefs,
+  fullscreen,
 }: SkyViewProps) {
   const heading = useDeviceHeading();
   const attitude = useDeviceAttitude();
@@ -264,7 +268,12 @@ export default function SkyView({
   const liveAircraft = useMemo(() => targets.map((t) => t.aircraft), [targets]);
 
   return (
-    <div ref={containerRef} onClick={handleTap} className="absolute inset-0 z-40 overflow-hidden bg-black">
+    <div
+      ref={containerRef}
+      onClick={handleTap}
+      data-testid="skyview"
+      className="absolute inset-0 z-40 overflow-hidden bg-black"
+    >
       {status === "granted" ? (
         <video
           ref={videoRef}
@@ -319,11 +328,32 @@ export default function SkyView({
           ← RADAR
         </button>
 
-        <div className="rounded-lg border border-radar-panelborder bg-radar-panel/80 px-3 py-1.5 text-center backdrop-blur-sm">
-          <div className="font-mono text-sm tracking-widest text-radar-green">
-            {heading.heading === null ? "—" : `${Math.round(heading.heading)}°`}
+        <div className="flex items-center gap-2">
+          {fullscreen.supported && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                fullscreen.toggle();
+              }}
+              aria-pressed={fullscreen.active}
+              aria-label={fullscreen.active ? "Leave full screen" : "Fill the screen"}
+              className={clsx(
+                "pointer-events-auto rounded-lg border bg-radar-panel/80 px-2.5 py-2 font-mono text-sm leading-none backdrop-blur-sm",
+                fullscreen.active
+                  ? "border-radar-green/40 text-radar-green"
+                  : "border-radar-panelborder text-radar-textdim"
+              )}
+            >
+              {fullscreen.active ? "\u2715" : "\u26f6"}
+            </button>
+          )}
+
+          <div className="rounded-lg border border-radar-panelborder bg-radar-panel/80 px-3 py-1.5 text-center backdrop-blur-sm">
+            <div className="font-mono text-sm tracking-widest text-radar-green">
+              {heading.heading === null ? "—" : `${Math.round(heading.heading)}°`}
+            </div>
+            <div className="font-mono text-[8px] tracking-[0.15em] text-radar-textdim">SKY VIEW</div>
           </div>
-          <div className="font-mono text-[8px] tracking-[0.15em] text-radar-textdim">SKY VIEW</div>
         </div>
       </div>
 

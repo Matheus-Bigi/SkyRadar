@@ -407,6 +407,43 @@ it tells someone their working instrument is broken.
   speak up again if things slip — acknowledging is not the same as switching
   it off for good.
 
+## Keeping the screen on, and filling it
+
+**The screen is held awake for as long as the app is on screen**, entry screen
+included. Watching for aircraft is mostly standing still and looking up, which
+is precisely the shape of "idle" a phone dims and locks for; losing the scope
+mid-approach because nobody had touched the glass is the one thing this app
+cannot afford to do. No switch, because there is no case where you would want
+the opposite while you are using it.
+
+Two details it would be easy to get wrong:
+
+- **The browser takes the lock back whenever the page is hidden** — a tab
+  switch, a call, the app going to the background — and does not hand it back
+  on its own. It is asked for again on the way in, and not while hidden, when
+  it would only be refused.
+- **Some browsers only grant it off the back of something the user did**, so
+  the first touch asks again if the opening request came to nothing.
+
+A browser without the API, or one that refuses, is taken at its word: the
+screen simply behaves the way it normally would and nothing is said about it.
+
+**Full screen is offered where the browser will honour it** — a control in the
+rail on the radar page, and a compact one beside the heading in Sky View,
+which is the view the browser's own toolbars cost the most. It is
+feature-detected rather than assumed: Safari on an iPad will put an element
+full screen, Safari on an iPhone will do it for video and nothing else, and a
+button that silently fails is worse than no button at all.
+
+The whole document goes full screen rather than one view, so the choice
+survives opening and leaving Sky View. The control follows the document rather
+than remembering what it last asked for, because leaving is not always the
+app's doing — Escape, a swipe, or the browser simply changing its mind.
+
+*On an iPhone, where the Fullscreen API is not available, adding SkyRadar to
+the Home Screen gives the same result: it then opens without Safari's chrome
+at all.*
+
 ## The control rail
 
 Every control on the radar page lives in one rail down the right-hand side.
