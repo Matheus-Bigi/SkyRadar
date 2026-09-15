@@ -16,7 +16,12 @@ import {
 import { drawSilhouette } from "../lib/render/silhouettes";
 import { interpolateAircraftFrame } from "../lib/render/interpolate";
 import { useAircraftStore } from "../store/useAircraftStore";
-import { RangeMiles, DisplayMode, CategoryFilter } from "../store/useRadarStore";
+import {
+  RangeMiles,
+  DisplayMode,
+  CategoryFilter,
+  categoryFilterMatches,
+} from "../store/useRadarStore";
 import { THEME, VISUALLY_RELEVANT_MILES } from "../lib/render/theme";
 import { playRadarBlip } from "../lib/audio/radarBeep";
 import { fmtAltitude, fmtSpeed } from "../lib/format";
@@ -94,10 +99,6 @@ function bearingToScreenRad(bearingDeg: number, rotationOffsetDeg = 0): number {
  */
 export function screenHeadingDeg(trueTrackDeg: number, plotRotationDeg: number): number {
   return normalizeDegrees(trueTrackDeg - plotRotationDeg);
-}
-
-function categoryMatches(filter: CategoryFilter, aircraft: Aircraft): boolean {
-  return filter === "ALL" || aircraft.category === filter;
 }
 
 export default function RadarCanvas(props: RadarCanvasProps) {
@@ -285,7 +286,7 @@ export default function RadarCanvas(props: RadarCanvasProps) {
       const rangeMetersLimit = milesToMeters(rangeMiles) * 1.05;
       const visible = frame.filter(
         (r) =>
-          categoryMatches(categoryFilter, r.aircraft) &&
+          categoryFilterMatches(categoryFilter, r.aircraft.category) &&
           distanceMeters(userPosition, { latitude: r.aircraft.latitude, longitude: r.aircraft.longitude }) <=
             rangeMetersLimit
       );
