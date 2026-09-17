@@ -676,10 +676,18 @@ one piece at a time. It is `env(safe-area-inset-top) + 0.75rem` normally and
 `+ 5rem` while full screen is on, which puts the wordmark clear of the exit
 button rather than under it.
 
-The status readout and its two buttons moved to a column under the wordmark at
-the same time. On the right they kept ending up beneath the battery and wifi;
-on the left, under a wordmark that has already been pushed clear, they are out
-of everything's way.
+The status readout and the refresh button moved to a column under the wordmark
+at the same time. On the right they kept ending up beneath the battery and
+wifi; on the left, under a wordmark that has already been pushed clear, they
+are out of everything's way.
+
+The gear stayed in the opposite corner, directly above the control rail's HIDE
+handle and sharing its right edge. Deliberately *above* the rail rather than
+inside it: the rail folds away, and a settings button that folded away with it
+would leave no way back to Settings without first bringing the rail out —
+which is the wrong order for a control that can turn the rail's own contents
+on and off. It hangs off `--chrome-top` like everything else up there, so full
+screen drops it clear of the battery and wifi too.
 
 ## The control rail
 

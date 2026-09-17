@@ -7,6 +7,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import MapView from "./MapView";
 import RadarCanvas from "./RadarCanvas";
 import TopBar from "./TopBar";
+import SettingsButton from "./SettingsButton";
 import RangeSelector from "./RangeSelector";
 import ModeToggle from "./ModeToggle";
 import CategoryFilterBar from "./CategoryFilterBar";
@@ -323,14 +324,15 @@ export default function SkyRadarApp() {
         />
       )}
 
-      <div className="absolute inset-x-0 top-[var(--chrome-top)] z-20 flex items-start justify-between gap-2 px-3">
-        <div className="flex-1">
-          <TopBar
-            status={aircraftStore.status}
-            aircraftCount={visibleAircraftCount}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
-        </div>
+      {/*
+        The top row: the wordmark and status down the left, the gear hard
+        against the right. Both ends hang off --chrome-top, so full screen
+        drops them together and the control rail — which starts 52px lower —
+        still begins underneath the gear rather than beside it.
+      */}
+      <div className="pointer-events-none absolute inset-x-0 top-[var(--chrome-top)] z-30 flex items-start justify-between gap-2 px-3">
+        <TopBar status={aircraftStore.status} aircraftCount={visibleAircraftCount} />
+        <SettingsButton onClick={() => setSettingsOpen(true)} />
       </div>
 
       {/*
