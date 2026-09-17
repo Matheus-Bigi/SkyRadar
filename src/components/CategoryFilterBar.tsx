@@ -2,19 +2,12 @@
 
 import clsx from "clsx";
 import { AircraftCategory } from "../lib/aircraft/types";
+import { CATEGORY_LABELS } from "../lib/aircraft/categories";
 import {
   ALL_CATEGORIES,
   CategoryFilter,
   showingAllCategories,
 } from "../store/useRadarStore";
-
-const LABELS: Record<AircraftCategory, { short: string; full: string }> = {
-  AIRLINE: { short: "AIRLINE", full: "Airliners" },
-  MILITARY: { short: "MILITARY", full: "Military aircraft" },
-  HELICOPTER: { short: "HELI", full: "Helicopters" },
-  GENERAL_AVIATION: { short: "GA", full: "General aviation" },
-  OTHER: { short: "OTHER", full: "Other aircraft" },
-};
 
 /**
  * A tick box, drawn rather than native so it matches the rail's weight at a
@@ -142,11 +135,11 @@ export default function CategoryFilterBar({
             key={c}
             onClick={() => onToggle(c)}
             aria-pressed={selected}
-            aria-label={`${LABELS[c].full}, ${counts[c] ?? 0} in range${selected ? ", showing" : ""}`}
+            aria-label={`${CATEGORY_LABELS[c].full}, ${counts[c] ?? 0} in range${selected ? ", showing" : ""}`}
             className={clsx(row, selected ? on : off)}
           >
             <Tick on={selected} />
-            {LABELS[c].short}
+            {CATEGORY_LABELS[c].short}
             {tally(counts[c] ?? 0, selected)}
           </button>
         );

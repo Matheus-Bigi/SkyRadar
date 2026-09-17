@@ -146,16 +146,17 @@ export default function SkyRadarApp() {
   );
 
   /*
-   * Military or unclassified traffic within three miles.
+   * Whichever kinds of traffic the user asked to be warned about, within
+   * three miles. Which categories those are lives in Settings, not here.
    *
    * Suppressed in Sky View, which is a different way of looking at the same
-   * sky and has its own guidance — a red wash over a camera feed would be
-   * noise, not a warning.
+   * sky and has its own guidance — a wash of colour over a camera feed would
+   * be noise, not a warning.
    */
   const proximity = useProximityAlert({
     aircraft: aircraftStore.current,
     position: geo.position,
-    enabled: prefs.proximityAlertEnabled,
+    categories: prefs.proximityAlertCategories,
     suppressed: skyViewOpen,
   });
 
@@ -315,7 +316,11 @@ export default function SkyRadarApp() {
       />
 
       {proximity.active && (
-        <ProximityAlert contacts={proximity.contacts} onAcknowledge={proximity.acknowledge} />
+        <ProximityAlert
+          contacts={proximity.alerting}
+          tone={proximity.tone}
+          onAcknowledge={proximity.acknowledge}
+        />
       )}
 
       <div className="absolute inset-x-0 top-[var(--chrome-top)] z-20 flex items-start justify-between gap-2 px-3">

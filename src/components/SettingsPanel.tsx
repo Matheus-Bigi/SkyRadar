@@ -1,6 +1,9 @@
 "use client";
 
 import { usePreferencesStore, Preferences } from "../store/usePreferencesStore";
+import { ALL_CATEGORIES } from "../store/useRadarStore";
+import { CATEGORY_LABELS, URGENT_CATEGORIES } from "../lib/aircraft/categories";
+import { ALERT_RADIUS_MILES } from "../hooks/useProximityAlert";
 
 type BooleanPrefKey = {
   [K in keyof Preferences]: Preferences[K] extends boolean ? K : never;
@@ -87,13 +90,41 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           {/*
             The alarm fires on the real world, not on what is currently
             plotted: filtering the scope down to airliners is a statement
-            about the display, not about what is worth being warned of. This
-            is the switch for people who do not want the warning at all.
+            about the display, not about what is worth being warned of. So
+            what to be warned about gets its own list, here.
+
+            No separate on/off switch — ticking nothing is the same
+            instruction as switching it off, and two controls for one idea is
+            one too many. The caption below says so rather than leaving an
+            empty list looking broken.
           */}
-          <ToggleRow
-            label="Military / unidentified within 3 mi"
-            {...bool("proximityAlertEnabled")}
-          />
+          <div className="px-2 pb-1 text-[11px] leading-snug text-radar-textdim">
+            Warn me when these come within {ALERT_RADIUS_MILES} miles
+          </div>
+          {ALL_CATEGORIES.map((c) => (
+            <ToggleRow
+              key={c}
+              label={CATEGORY_LABELS[c].full}
+              checked={prefs.proximityAlertCategories.includes(c)}
+              onChange={() =>
+                prefs.set(
+                  "proximityAlertCategories",
+                  prefs.proximityAlertCategories.includes(c)
+                    ? prefs.proximityAlertCategories.filter((x) => x !== c)
+                    : ALL_CATEGORIES.filter(
+                        (x) => x === c || prefs.proximityAlertCategories.includes(x)
+                      )
+                )
+              }
+            />
+          ))}
+          <div className="px-2 pt-1 text-[11px] leading-snug text-radar-textdim">
+            {prefs.proximityAlertCategories.length === 0
+              ? "Nothing selected — the alarm is off."
+              : prefs.proximityAlertCategories.some((c) => URGENT_CATEGORIES.includes(c))
+                ? "Military and other aircraft flash red; the rest flash green."
+                : "These flash green. Military and other aircraft would flash red."}
+          </div>
         </Section>
 
         <Section title="AIRCRAFT">
