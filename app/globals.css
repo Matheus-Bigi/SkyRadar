@@ -119,13 +119,31 @@ body {
 }
 
 .proximity-alert {
+  animation: proximity-pulse 1800ms ease-in-out infinite;
+}
+
+/*
+ * Two tones. Red is kept for military and unidentified traffic; everything
+ * else the user asked to be warned about arrives in green. If every alarm
+ * were red the colour would only mean "an alarm", and the one that matters
+ * would look like all the others.
+ */
+.proximity-alert--red {
   background: radial-gradient(
     ellipse at 50% 50%,
     rgba(255, 60, 60, 0) 38%,
     rgba(255, 60, 60, 0.1) 62%,
     rgba(255, 45, 45, 0.42) 100%
   );
-  animation: proximity-pulse 1800ms ease-in-out infinite;
+}
+
+.proximity-alert--green {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(51, 255, 153, 0) 38%,
+    rgba(51, 255, 153, 0.1) 62%,
+    rgba(51, 255, 153, 0.38) 100%
+  );
 }
 
 /* Someone who has asked for less motion still gets the warning, held steady. */

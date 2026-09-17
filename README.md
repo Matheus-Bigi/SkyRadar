@@ -592,9 +592,11 @@ at all.*
 
 ## The proximity alarm
 
-Military or unclassified traffic within **three miles** raises a red alarm on
-the radar page. It is built for a tablet left running on a windowsill: the
-point is to be noticed from across the room, and then to get out of the way.
+Traffic within **three miles** raises an alarm on the radar page. Which kinds
+of traffic is up to you — Settings ▸ ALERTS is a list of the same five
+categories the filter rail uses, and ticking none of them is how you turn the
+alarm off. It is built for a tablet left running on a windowsill: the point is
+to be noticed from across the room, and then to get out of the way.
 
 **It warns without hiding what it is warning about.** The alarm is a vignette
 — red at the edges of the screen, fully transparent through the middle, where
@@ -608,30 +610,52 @@ flashes a second is a photosensitivity risk, and this is meant to run
 unattended for hours. Readers who have asked for reduced motion get the same
 warning held steady instead of pulsing.
 
-A banner names the contact and its distance, because a red screen that does
-not say why is just alarming.
+A banner names the category, the contact and its distance, because a screen
+that changes colour without saying why is just alarming. The category is named
+the way it reads best rather than the way it is spelled internally: `OTHER`
+becomes **UNIDENTIFIED**, because "OTHER WITHIN 3 MI" is not English and what
+that category actually means is an aircraft the classifier could not place.
+One table in `src/lib/aircraft/categories.ts` holds all three names — short
+for the rail, full for Settings, and the alarm's own — because a category
+ticked as "Military aircraft" and announced as something else would look like
+a different aeroplane.
+
+**Two colours, and the difference is the point.** Red is kept for military and
+unidentified traffic. Everything else you asked to be told about arrives in
+green. If every alarm were red the colour would only mean "an alarm", and the
+one that matters would look like all the others. A mixed set is red: the
+urgent contact decides. The tone is read off the contacts *actually raising*
+the alarm, so acknowledging a military contact and then having a helicopter
+arrive gives a green alarm naming the helicopter, not a red one naming
+something already dealt with.
 
 **Three miles, not the selected range.** The alarm is about something
 approaching visual range, so it does not move when the scope is switched
 between 3 and 30 miles.
 
-**It ignores the category filter,** deliberately. Ticking AIRLINE is a
-statement about what you want drawn, not about what is worth being warned of,
-and an alarm silently disabled by an unrelated control is worse than no alarm.
-The banner names the contact, so a warning is never mysterious even when that
+**It ignores the category *filter*,** deliberately. Ticking AIRLINE in the
+rail is a statement about what you want drawn, not about what is worth being
+warned of, and an alarm silently disabled by an unrelated control is worse
+than no alarm. What is worth waking up for is its own list in Settings. The
+banner names the contact, so a warning is never mysterious even when that
 aircraft is filtered off the plot.
+
+There is no separate on/off switch beside that list, because "warn me about
+nothing" and "do not warn me" are the same instruction, and two controls for
+one idea is one too many. A caption under the list says as much rather than
+leaving an empty list looking broken.
 
 **Four ways it ends**, and all of them are deliberate:
 
 - **The aircraft leaves.** Recomputed from live positions on every snapshot,
   so nothing has to be cleared by hand.
-- **Sky View opens.** That mode has its own guidance, and a red wash over a
-  camera feed would be noise rather than a warning.
+- **Sky View opens.** That mode has its own guidance, and a wash of colour
+  over a camera feed would be noise rather than a warning.
 - **It is acknowledged.** GOT IT silences the contacts inside *at that
   moment*, by id. A different aircraft arriving raises a fresh alarm, and so
   does the same one returning after it left — an acknowledgement is for the
   thing you looked at, not a mute button on the next hour.
-- **It is switched off** in Settings, under ALERTS.
+- **Its category is unticked** in Settings, under ALERTS.
 
 Positions are the last ones actually reported, not the carried-forward ones
 the canvas draws. The difference is a few seconds of travel, and raising an

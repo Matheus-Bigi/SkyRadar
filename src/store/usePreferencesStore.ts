@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { AircraftCategory } from "../lib/aircraft/types";
 
 /**
  * All user-adjustable, locally-persisted preferences — Layers panel and
@@ -14,11 +15,12 @@ export interface Preferences {
   radarSoundEnabled: boolean;
 
   /**
-   * Whether military or unclassified traffic coming within three miles
-   * raises the on-screen alarm. On by default: it is the kind of thing you
-   * want to be told about, and it is easy to find here when it is not.
+   * Which aircraft categories raise the on-screen alarm when they come
+   * within three miles. Empty means the alarm is off — there is no separate
+   * enable switch, because "warn me about nothing" and "do not warn me" are
+   * the same instruction and two controls for one idea is one too many.
    */
-  proximityAlertEnabled: boolean;
+  proximityAlertCategories: AircraftCategory[];
 
   // Aircraft
   showCallsigns: boolean;
@@ -59,7 +61,7 @@ const defaults: Preferences = {
   skyViewEnabled: true,
   radarSoundEnabled: false,
 
-  proximityAlertEnabled: true,
+  proximityAlertCategories: ["MILITARY", "OTHER"],
 
   showCallsigns: true,
   militaryHighlighting: true,
@@ -93,6 +95,26 @@ export const usePreferencesStore = create<PreferencesStore>()(
       toggle: (key) => set({ [key]: !get()[key] } as Partial<Preferences>),
       reset: () => set({ ...defaults }),
     }),
-    { name: "skyradar:preferences", version: 1 }
+    {
+      name: "skyradar:preferences",
+      version: 2,
+      /**
+       * v1 had a single `proximityAlertEnabled` boolean, when the alarm was
+       * hard-wired to military and unidentified traffic. Anyone who has
+       * opened the app since that shipped has one in localStorage, so it is
+       * translated rather than dropped: on becomes exactly the two categories
+       * it used to watch, off becomes an empty list.
+       */
+      migrate: (persisted, version) => {
+        const state = persisted as Record<string, unknown>;
+        if (version < 2) {
+          const wasOn = state.proximityAlertEnabled;
+          state.proximityAlertCategories =
+            wasOn === false ? [] : (["MILITARY", "OTHER"] as AircraftCategory[]);
+          delete state.proximityAlertEnabled;
+        }
+        return state as unknown as PreferencesStore;
+      },
+    }
   )
 );
