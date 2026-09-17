@@ -13,6 +13,13 @@ export interface Preferences {
   skyViewEnabled: boolean;
   radarSoundEnabled: boolean;
 
+  /**
+   * Whether military or unclassified traffic coming within three miles
+   * raises the on-screen alarm. On by default: it is the kind of thing you
+   * want to be told about, and it is easy to find here when it is not.
+   */
+  proximityAlertEnabled: boolean;
+
   // Aircraft
   showCallsigns: boolean;
   militaryHighlighting: boolean;
@@ -51,6 +58,8 @@ const defaults: Preferences = {
   airportsEnabled: true,
   skyViewEnabled: true,
   radarSoundEnabled: false,
+
+  proximityAlertEnabled: true,
 
   showCallsigns: true,
   militaryHighlighting: true,

@@ -590,6 +590,73 @@ app's doing — Escape, a swipe, or the browser simply changing its mind.
 the Home Screen gives the same result: it then opens without Safari's chrome
 at all.*
 
+## The proximity alarm
+
+Military or unclassified traffic within **three miles** raises a red alarm on
+the radar page. It is built for a tablet left running on a windowsill: the
+point is to be noticed from across the room, and then to get out of the way.
+
+**It warns without hiding what it is warning about.** The alarm is a vignette
+— red at the edges of the screen, fully transparent through the middle, where
+the scope, the aircraft and their labels are. A flat wash over everything
+would have been easier to write and would also be the one thing an alarm must
+never do. It takes no pointer events either, so the map still pans and
+aircraft are still selectable while it is going.
+
+The cycle is 1.8 seconds, about half a hertz. Anything at or above three
+flashes a second is a photosensitivity risk, and this is meant to run
+unattended for hours. Readers who have asked for reduced motion get the same
+warning held steady instead of pulsing.
+
+A banner names the contact and its distance, because a red screen that does
+not say why is just alarming.
+
+**Three miles, not the selected range.** The alarm is about something
+approaching visual range, so it does not move when the scope is switched
+between 3 and 30 miles.
+
+**It ignores the category filter,** deliberately. Ticking AIRLINE is a
+statement about what you want drawn, not about what is worth being warned of,
+and an alarm silently disabled by an unrelated control is worse than no alarm.
+The banner names the contact, so a warning is never mysterious even when that
+aircraft is filtered off the plot.
+
+**Four ways it ends**, and all of them are deliberate:
+
+- **The aircraft leaves.** Recomputed from live positions on every snapshot,
+  so nothing has to be cleared by hand.
+- **Sky View opens.** That mode has its own guidance, and a red wash over a
+  camera feed would be noise rather than a warning.
+- **It is acknowledged.** GOT IT silences the contacts inside *at that
+  moment*, by id. A different aircraft arriving raises a fresh alarm, and so
+  does the same one returning after it left — an acknowledgement is for the
+  thing you looked at, not a mute button on the next hour.
+- **It is switched off** in Settings, under ALERTS.
+
+Positions are the last ones actually reported, not the carried-forward ones
+the canvas draws. The difference is a few seconds of travel, and raising an
+alarm off a measurement rather than off a prediction is the right trade.
+
+## Making room for the system's own furniture
+
+In full screen, iPadOS keeps drawing over the page: the clock and date at the
+top left, the battery and wifi at the top right, and a floating button to
+leave full screen that sits lower still, right on top of the wordmark. None of
+it is inside the safe-area insets the browser reports, so there is nothing to
+read and the room has to be made deliberately.
+
+`--chrome-top` is that room. Every top-anchored control — the wordmark and its
+buttons, the status banner, the alarm banner, the top of the control rail —
+starts from it, so full screen moves the page furniture together rather than
+one piece at a time. It is `env(safe-area-inset-top) + 0.75rem` normally and
+`+ 5rem` while full screen is on, which puts the wordmark clear of the exit
+button rather than under it.
+
+The status readout and its two buttons moved to a column under the wordmark at
+the same time. On the right they kept ending up beneath the battery and wifi;
+on the left, under a wordmark that has already been pushed clear, they are out
+of everything's way.
+
 ## The control rail
 
 Every control on the radar page lives in one rail down the right-hand side.
@@ -636,12 +703,17 @@ precisely when the per-category numbers are not there to add up yourself. It
 is withdrawn entirely during an outage: a count left standing would describe
 a scope that has already been cleared.
 
-This is why the rail is `w-28` rather than `w-24`. A busy 30 mile scope near a
-hub runs to three digits, and at the old width `MILITARY 142` overflowed its
-row and clipped the number. The 16px comes out of the map, which is a real
-cost — an aircraft four miles east on a 390px phone now sits under the rail
-rather than beside it — but a count you cannot read is worth less than the
-space it occupies, and the rail folds away when the map matters more.
+This is why the rail is `w-28` **from `sm` up**. A busy 30 mile scope near a
+hub runs to three digits, and at `w-24` `MILITARY 142` overflowed its row and
+clipped the number.
+
+It stays `w-24` on a phone, and the rows tighten there instead. Widening it
+everywhere was the first attempt, and on a 390px screen those 16px reached
+into the bottom-right of the scope — measured as a 7px intrusion at the outer
+edge of the south-southeast wedge, which is precisely the part of the plot the
+rail was moved off the bottom of the screen to protect. A tablet has the room
+to spare. A phone does not, so `--rail-open` carries the width and everything
+anchored beside the rail follows it.
 
 The tick boxes are what make it a multi-select rather than a set of pills
 that happen to allow more than one. Highlighted pills alone read as a

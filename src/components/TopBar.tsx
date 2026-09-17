@@ -15,7 +15,13 @@ export default function TopBar({
 }) {
   const live = status === "ready";
   return (
-    <div className="pointer-events-none flex items-start justify-between">
+    /*
+     * One column down the left, under the wordmark, rather than a bar with
+     * the status and controls thrown across to the right edge. On a tablet in
+     * full screen the right edge is where the system draws the battery and
+     * wifi, and these three kept ending up underneath it.
+     */
+    <div className="pointer-events-none flex flex-col items-start gap-2">
       <div className="pointer-events-auto rounded-lg border border-radar-panelborder bg-radar-panel/70 px-3.5 py-2 backdrop-blur-sm">
         <span className="font-mono text-sm font-semibold tracking-[0.2em] text-radar-text">SKYRADAR</span>
       </div>

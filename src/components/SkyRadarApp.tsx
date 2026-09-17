@@ -20,6 +20,7 @@ import LocationGate from "./LocationGate";
 import EmptyState from "./EmptyState";
 import DataStatusBanner from "./DataStatusBanner";
 import OverlapPicker from "./OverlapPicker";
+import ProximityAlert from "./ProximityAlert";
 
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceHeading } from "../hooks/useDeviceHeading";
@@ -29,6 +30,7 @@ import { useAircraftData } from "../hooks/useAircraftData";
 import { useReverseGeocode } from "../hooks/useReverseGeocode";
 import { usePhotoPrefetch } from "../hooks/usePhotoPrefetch";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import { useProximityAlert } from "../hooks/useProximityAlert";
 import { retryUnavailablePhotos } from "../lib/aircraft/photoClient";
 import { useAircraftStore } from "../store/useAircraftStore";
 import { useRadarStore, categoryFilterMatches, ALL_CATEGORIES } from "../store/useRadarStore";
@@ -143,6 +145,20 @@ export default function SkyRadarApp() {
     [categoryCounts]
   );
 
+  /*
+   * Military or unclassified traffic within three miles.
+   *
+   * Suppressed in Sky View, which is a different way of looking at the same
+   * sky and has its own guidance — a red wash over a camera feed would be
+   * noise, not a warning.
+   */
+  const proximity = useProximityAlert({
+    aircraft: aircraftStore.current,
+    position: geo.position,
+    enabled: prefs.proximityAlertEnabled,
+    suppressed: skyViewOpen,
+  });
+
   const selectedAircraft = useMemo<Aircraft | null>(() => {
     if (!selection.selectedAircraftId) return null;
     return aircraftStore.current.find((a) => a.id === selection.selectedAircraftId) ?? null;
@@ -234,7 +250,24 @@ export default function SkyRadarApp() {
   return (
     <main
       className="relative h-full w-full select-none overflow-hidden bg-radar-bg"
-      style={{ "--rail-inset": railCollapsed ? "0.75rem" : "8rem" } as React.CSSProperties}
+      style={
+        {
+          "--rail-inset": railCollapsed ? "0.75rem" : "var(--rail-open)",
+          /*
+           * How far down every top-anchored control starts.
+           *
+           * In full screen iPadOS keeps drawing over the page: the clock and
+           * date at the top left, the battery and wifi at the top right, and a
+           * floating X to leave full screen that sits lower still, right on
+           * top of the wordmark. None of it is inside the safe-area insets the
+           * browser reports, so there is nothing to read — the room has to be
+           * made deliberately, and only while full screen is actually on.
+           */
+          "--chrome-top": fullscreen.active
+            ? "calc(env(safe-area-inset-top, 0px) + 5rem)"
+            : "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
+        } as React.CSSProperties
+      }
     >
       <MapView
         center={geo.position}
@@ -281,7 +314,11 @@ export default function SkyRadarApp() {
         error={aircraftStore.error}
       />
 
-      <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-3">
+      {proximity.active && (
+        <ProximityAlert contacts={proximity.contacts} onAcknowledge={proximity.acknowledge} />
+      )}
+
+      <div className="absolute inset-x-0 top-[var(--chrome-top)] z-20 flex items-start justify-between gap-2 px-3">
         <div className="flex-1">
           <TopBar
             status={aircraftStore.status}
@@ -300,11 +337,18 @@ export default function SkyRadarApp() {
       <div
         id="control-rail"
         className={clsx(
-          // w-28 rather than w-24: the category rows now carry a count, and a
-          // busy 30 mile scope near a hub runs to three digits. At the old
-          // width "MILITARY 196" overflowed its row by a few pixels and the
-          // number was clipped — a count you cannot read is worse than none.
-          "no-scrollbar absolute bottom-3 right-3 top-16 z-20 flex w-28 flex-col items-stretch gap-2 overflow-y-auto",
+          // Width: wider from sm up, because the category rows carry a count
+          // and a busy 30 mile scope near a hub runs to three digits — at
+          // w-24 "MILITARY 142" overflowed its row and clipped the number.
+          // On a phone those same pixels reach into the bottom-right of the
+          // scope, which is the one thing this rail exists to keep clear, so
+          // there it stays narrow and the rows tighten instead. Paired with
+          // --rail-open, which --rail-inset follows.
+          //
+          // Top: tracks the same offset the rest of the chrome does, keeping
+          // its old 52px gap below the wordmark, so full screen moves the
+          // whole page furniture together rather than one piece at a time.
+          "no-scrollbar absolute bottom-3 right-3 top-[calc(var(--chrome-top)+3.25rem)] z-20 flex w-24 flex-col items-stretch gap-2 overflow-y-auto sm:w-28",
           "transition-[transform,visibility] duration-200 ease-out motion-reduce:transition-none",
           // `invisible` rather than only sliding it off: a control parked
           // off-screen is still in the tab order and still read out, and a

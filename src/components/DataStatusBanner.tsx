@@ -17,7 +17,8 @@ export default function DataStatusBanner({
   // traffic at the user's real location.
   if (source === "simulated") {
     return (
-      <div className="pointer-events-none absolute left-1/2 top-14 z-20 -translate-x-1/2">
+      <div className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2"
+        style={{ top: "calc(var(--chrome-top, 0.75rem) + 2.75rem)" }}>
         <div className="rounded-md border border-radar-amber/60 bg-radar-amber/15 px-3 py-1.5 font-mono text-[10px] tracking-widest text-radar-amber backdrop-blur-sm">
           SIMULATED DATA — NOT REAL AIRCRAFT
         </div>
@@ -31,7 +32,8 @@ export default function DataStatusBanner({
     status === "offline" ? "LIVE DATA UNAVAILABLE" : "Aircraft data temporarily unavailable";
 
   return (
-    <div className="pointer-events-none absolute left-1/2 top-14 z-20 w-[min(92vw,26rem)] -translate-x-1/2">
+    <div className="pointer-events-none absolute left-1/2 z-20 w-[min(92vw,26rem)] -translate-x-1/2"
+      style={{ top: "calc(var(--chrome-top, 0.75rem) + 2.75rem)" }}>
       <div className="rounded-md border border-radar-amber/40 bg-radar-panel/85 px-3 py-1.5 text-center backdrop-blur-sm">
         <div className="font-mono text-[10px] tracking-widest text-radar-amber">{message}</div>
         {/* The provider's own words — so a rate limit, an outage and a bug

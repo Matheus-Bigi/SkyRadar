@@ -94,3 +94,62 @@ body {
     animation-duration: 2400ms;
   }
 }
+
+/*
+ * Proximity alarm.
+ *
+ * A red vignette that breathes at the edges of the screen and leaves the
+ * middle — where the scope, the aircraft and their labels are — completely
+ * clear. A flat wash over everything would be easier to write and would also
+ * be the one thing an alarm must never do: hide what it is telling you to
+ * look at.
+ *
+ * The cycle is deliberately slow. Anything at or above three flashes a second
+ * is a photosensitivity risk, and this is meant to run unattended for hours
+ * on a tablet propped against a window. At 1.8s it is about half a hertz.
+ */
+@keyframes proximity-pulse {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.proximity-alert {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(255, 60, 60, 0) 38%,
+    rgba(255, 60, 60, 0.1) 62%,
+    rgba(255, 45, 45, 0.42) 100%
+  );
+  animation: proximity-pulse 1800ms ease-in-out infinite;
+}
+
+/* Someone who has asked for less motion still gets the warning, held steady. */
+@media (prefers-reduced-motion: reduce) {
+  .proximity-alert {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/*
+ * How much room the open control rail takes from the right edge.
+ *
+ * Narrower on a phone. The rail widened to fit the per-category counts, and
+ * at 390px those extra pixels reached into the bottom-right of the scope —
+ * measured as a 7px intrusion at the outer edge of the south-southeast wedge,
+ * which is exactly the part of the plot the rail was moved off the bottom of
+ * the screen to protect. The tablet has the room to spare; the phone does not.
+ */
+:root {
+  --rail-open: 7rem;
+}
+@media (min-width: 640px) {
+  :root {
+    --rail-open: 8rem;
+  }
+}
