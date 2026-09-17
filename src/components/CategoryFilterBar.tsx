@@ -87,8 +87,10 @@ export default function CategoryFilterBar({
   const all = showingAllCategories(value);
   const chosen = ALL_CATEGORIES.filter((c) => !all && value.includes(c));
 
+  // Tighter below sm, where the rail is a whole ring-width narrower: the
+  // count still has to fit beside the longest label without clipping.
   const row =
-    "flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left font-mono text-[10px] tracking-wide transition-colors";
+    "flex w-full items-center gap-1 rounded-md px-1 py-1 text-left font-mono text-[9px] tracking-normal transition-colors sm:gap-1.5 sm:px-1.5 sm:text-[10px] sm:tracking-wide";
   // A count column that does not shift as digits come and go, and dims when
   // there is nothing there — an empty category should read as empty at a
   // glance rather than as a zero to be parsed.

@@ -83,6 +83,19 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           <ToggleRow label="Airports" {...bool("airportsEnabled")} />
         </Section>
 
+        <Section title="ALERTS">
+          {/*
+            The alarm fires on the real world, not on what is currently
+            plotted: filtering the scope down to airliners is a statement
+            about the display, not about what is worth being warned of. This
+            is the switch for people who do not want the warning at all.
+          */}
+          <ToggleRow
+            label="Military / unidentified within 3 mi"
+            {...bool("proximityAlertEnabled")}
+          />
+        </Section>
+
         <Section title="AIRCRAFT">
           <ToggleRow label="Show callsigns" {...bool("showCallsigns")} />
           <ToggleRow label="Military highlighting" {...bool("militaryHighlighting")} />
